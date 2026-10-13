@@ -90,3 +90,66 @@ pub fn value_as_str_array(value: &OwnedValue) -> Option<Vec<String>> {
         .ok()
         .and_then(|value| Vec::<String>::try_from(value).ok())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_helpers_round_trip() {
+        assert_eq!(value_as_bool(&bool_value(true)), Some(true));
+        assert_eq!(value_as_u32(&u32_value(512)), Some(512));
+        assert_eq!(value_as_i32(&i32_value(-100)), Some(-100));
+        assert_eq!(
+            value_as_string(&str_value("tight")).as_deref(),
+            Some("tight")
+        );
+        assert_eq!(
+            value_as_str_array(&str_array_value(&["cpu", "npu"])),
+            Some(vec!["cpu".to_string(), "npu".to_string()])
+        );
+    }
+
+    #[test]
+    fn integer_helpers_accept_the_other_signedness_when_in_range() {
+        assert_eq!(value_as_u32(&i32_value(42)), Some(42));
+        assert_eq!(value_as_i32(&u32_value(42)), Some(42));
+    }
+
+    #[test]
+    fn integer_helpers_reject_out_of_range_values() {
+        assert_eq!(value_as_u32(&i32_value(-1)), None);
+        assert_eq!(value_as_i32(&u32_value(u32::MAX)), None);
+    }
+
+    #[test]
+    fn helpers_reject_mismatched_types() {
+        assert_eq!(value_as_bool(&u32_value(1)), None);
+        assert_eq!(value_as_u32(&str_value("7")), None);
+        assert_eq!(value_as_i32(&bool_value(true)), None);
+        assert_eq!(value_as_string(&u32_value(7)), None);
+        assert_eq!(value_as_str_array(&str_value("cpu")), None);
+    }
+
+    #[test]
+    fn empty_str_array_round_trips() {
+        let empty: [&str; 0] = [];
+        assert_eq!(
+            value_as_str_array(&str_array_value(&empty)),
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn ids_are_unique() {
+        let mut effects = EFFECT_IDS.to_vec();
+        effects.sort_unstable();
+        effects.dedup();
+        assert_eq!(effects.len(), EFFECT_IDS.len());
+
+        let mut reactions = REACTION_IDS.to_vec();
+        reactions.sort_unstable();
+        reactions.dedup();
+        assert_eq!(reactions.len(), REACTION_IDS.len());
+    }
+}

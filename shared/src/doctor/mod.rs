@@ -108,3 +108,53 @@ pub fn print_report(checks: &[Check]) -> i32 {
     println!("\n{fails} failed, {warns} warning(s)");
     (fails > 0) as i32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(status: Status) -> Check {
+        Check::new("group", "name", status, "detail", None)
+    }
+
+    #[test]
+    fn print_report_exit_code_tracks_failures() {
+        assert_eq!(print_report(&[]), 0);
+        assert_eq!(
+            print_report(&[check(Status::Ok), check(Status::Warn), check(Status::Info)]),
+            0
+        );
+        assert_eq!(print_report(&[check(Status::Ok), check(Status::Fail)]), 1);
+    }
+
+    #[test]
+    fn check_json_shape_is_stable() {
+        // `vinoopeneffects-ctl doctor --json` emits this; keep it script-friendly.
+        let json = serde_json::to_value(check(Status::Warn)).unwrap();
+        assert_eq!(json["status"], "warn");
+        assert!(json.get("fix").is_none(), "fix omitted when None");
+
+        let with_fix = Check::new("g", "n", Status::Fail, "d", Some("do x".into()));
+        let json = serde_json::to_value(with_fix).unwrap();
+        assert_eq!(json["status"], "fail");
+        assert_eq!(json["fix"], "do x");
+    }
+
+    #[test]
+    fn status_tags_line_up() {
+        for s in [Status::Ok, Status::Warn, Status::Fail, Status::Info] {
+            assert_eq!(s.tag().len(), 4, "{s:?}");
+        }
+    }
+
+    #[test]
+    fn run_all_produces_a_check_per_probe() {
+        // Smoke test against whatever host runs the tests: every probe must
+        // return a labelled check without panicking, whatever it finds.
+        let checks = run_all(Err("daemon is not running"));
+        assert_eq!(checks.len(), 13 + models::KNOWN_MODELS.len());
+        for c in &checks {
+            assert!(!c.group.is_empty() && !c.name.is_empty(), "{c:?}");
+        }
+    }
+}
