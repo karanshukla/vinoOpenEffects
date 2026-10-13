@@ -1,8 +1,3 @@
 /target/
 /build/
 /.cache/
-/dist/
-packaging/src
-packaging/*onnx
-packaging/*tar.gz
-packaging/LICENSE*

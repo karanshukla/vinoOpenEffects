@@ -1,8 +1,4 @@
-//! `oe_effects` — the single CPU video filter that hosts every ML-driven
-//! effect. It receives RGBA frames in system memory, packs them into a tight
-//! buffer and hands them to [`oe_core::effects::Effects`], which holds the
-//! effects themselves. This element only maps GObject properties onto the
-//! effect settings, swaps inference providers, and frees idle models.
+//! The CPU filter hosting every effect; see docs/architecture.md#the-oe_effects-element.
 
 use gst::glib;
 use gst::glib::subclass::prelude::*;
@@ -42,13 +38,11 @@ mod imp {
     #[derive(Default)]
     struct State {
         effects: Effects,
-        /// Reusable packed-frame buffer (a multi-MB alloc otherwise repeated
-        /// every frame).
+        /// Packed-frame buffer reused across frames to avoid a multi-MB alloc each time.
         canvas: Vec<u8>,
     }
 
-    /// How long a model may sit unused before its session is freed. Passthrough
-    /// stops frames reaching the filter, so this runs on a timer, not per frame.
+    /// Unused sessions are freed on a timer, since passthrough stops frames reaching the filter.
     const MODEL_IDLE_UNLOAD: Duration = Duration::from_secs(60);
     const REAP_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -83,9 +77,7 @@ mod imp {
             self.state.lock().unwrap().effects.engine.generation
         }
 
-        /// Reload every loaded model on `target_provider` without holding the
-        /// state lock, so frames keep flowing on the old sessions while the new
-        /// ones compile, then swap them in at once. On error the models stay put.
+        /// Reload every model on `target_provider` off the state lock, then swap; see docs/architecture.md#inference.
         pub fn swap_provider(
             &self,
             target_provider: &str,

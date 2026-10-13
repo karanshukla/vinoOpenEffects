@@ -44,7 +44,10 @@ pub fn dbus_verdict(
                             "dbus",
                             Status::Fail,
                             format!("unreachable ({err}); no D-Bus activation .service file found"),
-                            Some("install or link dist/io.github.karanshukla.vinoopeneffects.Daemon.service to ~/.local/share/dbus-1/services/".into()),
+                            Some(
+                                "run scripts/install.sh to install the D-Bus activation file"
+                                    .into(),
+                            ),
                         );
                     }
                     Some(f) if !f.exec_exists && f.exec_path.is_some() => {
@@ -118,7 +121,7 @@ pub fn activation_file_verdict(files: &[ActivationFileInfo]) -> Check {
             "activation",
             Status::Warn,
             "no D-Bus activation service file found in search paths",
-            Some("install or link dist/io.github.karanshukla.vinoopeneffects.Daemon.service to ~/.local/share/dbus-1/services/".into()),
+            Some("run scripts/install.sh to install the D-Bus activation file".into()),
         ),
     }
 }
@@ -159,7 +162,7 @@ pub fn systemd_unit_verdict(state: UnitState, is_enabled: bool) -> Check {
             "systemd",
             Status::Warn,
             "vinoopeneffects-daemon.service unit not found in systemd search paths",
-            Some("copy dist/vinoopeneffects-daemon.service to ~/.local/share/systemd/user/".into()),
+            Some("run scripts/install.sh to install the systemd user unit".into()),
         ),
     }
 }

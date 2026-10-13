@@ -6,7 +6,7 @@
 
 use std::process::Command;
 
-/// The systemd user unit installed by packaging (`/usr/lib/systemd/user/`).
+/// The systemd user unit `scripts/install.sh` installs.
 pub const UNIT: &str = "vinoopeneffects-daemon.service";
 
 fn systemctl(args: &[&str]) -> std::io::Result<std::process::Output> {
