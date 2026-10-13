@@ -22,6 +22,9 @@ behaviour, update the page that owns it. How it works is in
   `funinkina/openeffects` and nothing is ever pushed or PR'd there.
 - Commits are conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
   `ci:`, `chore:`); `CHANGELOG.md` is generated from them with `git cliff`.
+- Releases are consecutive tags (`v1`, `v2`), not semver, cut with
+  `scripts/release.sh` after the changelog section is merged
+  (`docs/development.md#releases`).
 
 ## Build and test
 

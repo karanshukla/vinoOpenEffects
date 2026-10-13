@@ -40,8 +40,8 @@ conventional_commits = true
 filter_unconventional = true
 require_conventional = false
 split_commits = false
-# Only consecutive release tags (v1, v2); the inherited v0.1.x tags are not releases here.
-tag_pattern = "^v[0-9]+$"
+# Every v tag is a boundary, so --unreleased starts after the last one (inherited v0.1.x included).
+tag_pattern = "^v[0-9]"
 sort_commits = "newest"
 filter_commits = true
 # The website/ tree left with upstream; its commits are not part of this project.

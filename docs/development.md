@@ -109,23 +109,23 @@ groups cargo and action updates weekly after a 7-day cooldown.
 
 ## Releases
 
-Releases are numbered consecutively: `v1`, `v2`, and so on. A release is a tag
-and a changelog entry. There is no release workflow and no packages yet:
-vinoOpenEffects installs from source ([install.md](install.md)).
+Releases are consecutive numbers (`v1`, `v2`, ...), not semver: a release is
+`main` at that point, and the number only says which one is newer. The inherited
+upstream tags (`v0.1.x`) count by their first number, so the first release is
+`v1`. There is no schedule; cut one when `main` has a user-facing change worth
+installing.
 
 ```bash
-git cliff --unreleased --tag v2 --prepend CHANGELOG.md   # file pending commits under v2
-git commit -am "docs(changelog): v2"
-git tag v2 && git push && git push origin v2
+scripts/release.sh --dry-run                               # next tag, and the PRs merged since the last one
+git cliff --unreleased --tag v1 --prepend CHANGELOG.md     # then merge this through a PR
+scripts/release.sh                                         # from an up-to-date main: tag origin/main's head, push the tag
 ```
 
-The first release has no earlier `vN` tag to start from, so it uses a range
-from the last inherited upstream tag instead:
-`git cliff v0.1.4..HEAD --tag v1 --prepend CHANGELOG.md`.
-
-The crate version in `[workspace.package]` in `Cargo.toml` is separate from the
-release number. `scripts/bump-version.sh` still takes a semver `x.y.z` and tags
-`vx.y.z`, so don't use it to cut a consecutive release.
+`release.sh` refuses to tag until `CHANGELOG.md` on `main` has the new tag's
+section. A release is only a tag and a changelog entry: there is no release
+workflow and no packages yet, since vinoOpenEffects installs from source
+([install.md](install.md)). The crate version in `Cargo.toml` is not the
+release number and doesn't change with it.
 
 ### Changelog
 
