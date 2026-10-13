@@ -23,7 +23,7 @@ is easier from a checkout, and packaging will come back later.
 ```bash
 scripts/install.sh                          # into ~/.local, no root
 scripts/install.sh --no-gui                 # daemon and CLI only
-scripts/install.sh --no-models              # skip the model download (reinstalls)
+scripts/install.sh --no-models              # don't touch models at all
 scripts/install.sh --build-runtime          # let ovfetch compile a newer OpenVINO build
 sudo scripts/install.sh --prefix /usr/local # system-wide
 ```
@@ -37,17 +37,20 @@ It builds a release and installs:
 | systemd user unit | `share/systemd/user/vinoopeneffects-daemon.service` |
 | Desktop entry and icons (GUI) | `share/applications/`, `share/icons/hicolor/` |
 | onnxruntime | `lib/vinoopeneffects/ort/`, installed by `ovfetch` (see below) |
-| Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests |
+| Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests; ones already present and verified are skipped |
 
 **ovfetch decides the runtime.** `install.sh` stops before building if ovfetch
-is missing or older than 0.4.0, then runs `ovfetch install` and accepts its
-answer. ovfetch picks the OpenVINO build of onnxruntime that fits the machine's
-NPU and driver, or the newest one on a machine without an NPU; that build also
-carries the CPU provider, so the same runtime serves CPU inference. If ovfetch
-refuses or fails, the install stops with its reason. That includes a prefix
-holding a newer build ovfetch won't downgrade, such as one compiled with
-`ovfetch install --build`: re-run with `--build-runtime` to resolve that build
-again (an unchanged one is not recompiled).
+is missing or older than 0.4.0, then runs `ovfetch install` before installing
+anything else. ovfetch picks the OpenVINO build of onnxruntime that fits the
+machine's NPU and driver, or the newest one on a machine without an NPU; that
+build also carries the CPU provider, so the same runtime serves CPU inference.
+
+If ovfetch doesn't install (for example, the prefix holds a newer build it won't
+downgrade, such as one compiled with `ovfetch install --build`, or the download
+fails) but the prefix passes `ovfetch verify`, the install continues with that
+runtime and a warning. With nothing verified to keep, it stops with ovfetch's
+reason. `--build-runtime` passes `--build`, so ovfetch resolves the compiled
+build itself (an unchanged one is not recompiled).
 
 Then it asks the session bus to reload, so the daemon is D-Bus-activatable
 straight away, and warns if `bin/` isn't on `PATH`. It does not restart a daemon

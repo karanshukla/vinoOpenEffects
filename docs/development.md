@@ -45,7 +45,7 @@ models and an onnxruntime), so a checkout can be the install. It doesn't restart
 anything that's already running:
 
 ```bash
-scripts/install.sh --no-models           # rebuild and reinstall; models are already there
+scripts/install.sh                       # rebuild and reinstall; verified models and runtime are kept
 systemctl --user restart vinoopeneffects-daemon
 ```
 

@@ -9,7 +9,7 @@
 # Installs binaries, D-Bus interfaces and activation file, the systemd user
 # unit, desktop entry and icons, fetches the sha256-verified ONNX models, and
 # has ovfetch (>= 0.4.0, the only source of onnxruntime) install the runtime
-# into lib/vinoopeneffects/ort. If ovfetch refuses or fails, so does this.
+# into lib/vinoopeneffects/ort, keeping a verified ovfetch install it won't replace.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,8 +57,15 @@ cargo build --release --locked "${build[@]}"
 
 ortdir="$prefix/lib/vinoopeneffects/ort"
 echo "==> onnxruntime (ovfetch)"
-ovfetch install --prefix "$ortdir" "${ovfetch_args[@]}" ||
-    die "ovfetch did not install onnxruntime into $ortdir (its reason is above); where it suggests --build, re-run with --build-runtime"
+if ovfetch_out="$(ovfetch install --prefix "$ortdir" "${ovfetch_args[@]}" 2>&1)"; then
+    echo "$ovfetch_out"
+elif ovfetch verify --prefix "$ortdir" >/dev/null 2>&1; then
+    echo "keeping the verified ovfetch install in $ortdir"
+    echo "  ovfetch: $(echo "$ovfetch_out" | sed -n 's/^Error: //p' | tail -1)"
+else
+    echo "$ovfetch_out" >&2
+    die "ovfetch did not install onnxruntime into $ortdir, and there is no verified ovfetch install to keep"
+fi
 
 echo "==> Installing to $prefix"
 install -d "$bindir"

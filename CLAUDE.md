@@ -45,7 +45,8 @@ Crate names: `vinoopeneffects-shared`, `vinoopeneffects-core`,
 `vinoopeneffects-daemon`, `vinoopeneffects-ctl` (CLI), `vinoopeneffects` (GUI),
 `vinoopeneffects-integration-tests`.
 
-To exercise a change for real: `scripts/install.sh --no-models`, then
+To exercise a change for real: `scripts/install.sh` (it skips verified models
+and keeps a verified onnxruntime), then
 `systemctl --user restart vinoopeneffects-daemon`, then open the virtual camera
 in an app (or the GUI preview). `vinoopeneffects-ctl doctor` checks the install.
 
