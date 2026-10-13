@@ -5,6 +5,7 @@
 # vinoOpenEffects
 
 [![CI](https://github.com/karanshukla/vinoOpenEffects/actions/workflows/ci.yml/badge.svg)](https://github.com/karanshukla/vinoOpenEffects/actions/workflows/ci.yml)
+[![Coverage](https://coveralls.io/repos/github/karanshukla/vinoOpenEffects/badge.svg?branch=main)](https://coveralls.io/github/karanshukla/vinoOpenEffects?branch=main)
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](https://github.com/karanshukla/vinoOpenEffects/blob/main/LICENSE)
 [![Language](https://img.shields.io/badge/language-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
