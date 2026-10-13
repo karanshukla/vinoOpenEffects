@@ -99,12 +99,6 @@ This project is a hard fork of `openeffects` and everything was renamed. Install
 
 Your config and downloaded models are migrated automatically on first start of the new daemon/GUI. If you set `OE_EP` in a systemd drop-in, the migration rewrites it to `VINOOPENEFFECTS_EP`. Update any scripts, keybinds or Waybar modules that call `openeffectsctl`, and re-select the camera in apps (Zoom, OBS, browsers) since the device name changed.
 
-### Remote repositories (coming soon)
-
-- **Arch Linux (AUR)** — _coming soon_: `yay -S vinoopeneffects`
-- **Fedora (COPR)** — _coming soon_: `dnf copr enable <user>/vinoopeneffects && dnf install vinoopeneffects`
-- **Ubuntu / Debian (PPA)** — _coming soon_: `add-apt-repository ppa:<user>/vinoopeneffects && apt install vinoopeneffects`
-
 ## Usage
 
 Start the daemon (usually handled automatically by the systemd user service):
