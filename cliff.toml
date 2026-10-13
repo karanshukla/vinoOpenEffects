@@ -43,6 +43,8 @@ split_commits = false
 tag_pattern = "v[0-9].*"
 sort_commits = "newest"
 filter_commits = true
+# The website/ tree left with upstream; its commits are not part of this project.
+exclude_paths = ["website/**"]
 
 # A commit takes the first matching parser, so the skips come before the groups.
 commit_parsers = [
