@@ -125,7 +125,10 @@ scripts/release.sh                                         # from an up-to-date 
 section. A release is only a tag and a changelog entry: there is no release
 workflow and no packages yet, since vinoOpenEffects installs from source
 ([install.md](install.md)). The crate version in `Cargo.toml` is not the
-release number and doesn't change with it.
+release number and doesn't change with it. The version the GUI's About dialog
+and `vinoopeneffects-ctl --version` show comes from `buildinfo/version.rs` at
+build time: `VINOOPENEFFECTS_VERSION` if set, else the checkout's exact `vN`
+tag, else `dev`.
 
 ### Changelog
 
