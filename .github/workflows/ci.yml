@@ -154,6 +154,8 @@ jobs:
       - *apt
       - *cache
       - run: shellcheck scripts/install.sh scripts/uninstall.sh
+      - name: Install ovfetch
+        run: cargo install ovfetch --version "$(sed -n 's/^ovfetch_min=//p' scripts/install.sh)" --locked
       - name: Install into a scratch prefix, then remove it
         run: |
           prefix="$RUNNER_TEMP/prefix"

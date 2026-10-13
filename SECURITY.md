@@ -23,8 +23,7 @@ when you run a script that downloads something, and each download is checked:
 | Download | Script | Check |
 |---|---|---|
 | The four bundled models | `scripts/fetch-models.sh` (run by `install.sh`) | sha256 from the committed `data/models/*/manifest.toml`; a mismatch fails |
-| CPU onnxruntime | `scripts/fetch-ort.sh` | sha256 pinned in the script |
-| OpenVINO onnxruntime | `ovfetch install` | ovfetch's own verification; not pinned by this repo |
+| onnxruntime (OpenVINO build, also used for CPU) | `ovfetch install` (run by `install.sh`) | ovfetch's reviewed hash ledger, independent sources agreeing on each hash, and `SHA256SUMS` for `ovfetch verify`; this repo pins the minimum ovfetch version, not the artifact |
 | IAT checkpoint (experimental) | `scripts/export-iat.py` | pinned upstream commit, checkpoint sha256, then the export's sha256 against its manifest |
 
 The daemon checks each model against its manifest's sha256 when it resolves it,

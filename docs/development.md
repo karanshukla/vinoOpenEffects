@@ -25,12 +25,11 @@ That is enough to build and to run `cargo test --workspace`. Two more things
 are needed to run the models, and the tests that use them skip without them:
 
 - **onnxruntime.** The default `npu` build loads `libonnxruntime.so` at runtime,
-  for CPU inference as well as NPU. `scripts/fetch-ort.sh DIR` downloads the
-  sha256-verified CPU build; point `ORT_DYLIB_PATH` at it or put it in
-  `~/.local/lib/vinoopeneffects/ort`. For the NPU, use
-  `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort` instead.
-  `cargo build --no-default-features` links a CPU-only runtime statically and
-  needs neither.
+  for CPU inference as well as NPU. It comes from ovfetch only:
+  `cargo install ovfetch --locked`, then
+  `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort` (or point
+  `ORT_DYLIB_PATH` at another ovfetch prefix). `cargo build --no-default-features`
+  links a CPU-only runtime statically and needs neither.
 - **Models.** `scripts/fetch-models.sh` downloads the four bundled models into
   `~/.local/share/vinoopeneffects/models`, checking each against its manifest's
   sha256. It is idempotent.

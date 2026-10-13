@@ -70,8 +70,10 @@ each one checks. The ones that bite:
 
 - **The default `npu` feature loads onnxruntime at runtime, for CPU too.** No
   `libonnxruntime.so` (via `ORT_DYLIB_PATH` or `~/.local/lib/vinoopeneffects/ort`)
-  means no model runs at all. `scripts/fetch-ort.sh DIR` gets the CPU build.
-  `--no-default-features` links a CPU-only runtime statically.
+  means no model runs at all. ovfetch is the only source of that runtime
+  (`ovfetch install --prefix DIR`); `install.sh` and both workflows use it, and
+  the required version is `ovfetch_min` in `install.sh`. Don't add another
+  download path. `--no-default-features` links a CPU-only runtime statically.
 - **Model-backed tests pass by skipping** when models or onnxruntime are
   missing, printing `skipping: ...`. A green local run proves nothing about
   inference unless `scripts/fetch-models.sh` and an onnxruntime are in place.
