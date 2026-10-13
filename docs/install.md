@@ -13,6 +13,9 @@ is easier from a checkout, and packaging will come back later.
 - For the GUI: libadwaita 1.7 or newer, and `gtk4paintablesink` for the live
   preview (`gstreamer1-plugin-gtk4` on Fedora, `gstreamer1.0-gtk4` on
   Debian/Ubuntu, `gst-plugin-gtk4` on Arch). Use `--no-gui` without them.
+- For an Intel NPU or GPU: [ovfetch](https://github.com/karanshukla/ovfetch)
+  0.4.0 or newer (`cargo install ovfetch --locked`), which installs the
+  OpenVINO build of onnxruntime
 - x86_64 has been tested; nothing else has
 
 ## Installing
@@ -21,6 +24,7 @@ is easier from a checkout, and packaging will come back later.
 scripts/install.sh                          # into ~/.local, no root
 scripts/install.sh --no-gui                 # daemon and CLI only
 scripts/install.sh --no-models              # skip the model download (reinstalls)
+scripts/install.sh --cpu-runtime            # CPU onnxruntime even with an NPU or GPU
 sudo scripts/install.sh --prefix /usr/local # system-wide
 ```
 
@@ -32,8 +36,15 @@ It builds a release and installs:
 | D-Bus interfaces and activation file | `share/dbus-1/interfaces/`, `share/dbus-1/services/` |
 | systemd user unit | `share/systemd/user/vinoopeneffects-daemon.service` |
 | Desktop entry and icons (GUI) | `share/applications/`, `share/icons/hicolor/` |
-| onnxruntime | `lib/vinoopeneffects/ort/`: the OpenVINO build via `ovfetch` when it detects an NPU or GPU, the sha256-verified CPU build otherwise |
+| onnxruntime | `lib/vinoopeneffects/ort/`: the OpenVINO build via `ovfetch` when it detects an NPU or GPU, the sha256-verified CPU build otherwise (see below) |
 | Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests |
+
+**onnxruntime never falls back to CPU silently.** With an NPU or GPU present,
+`install.sh` stops before building if ovfetch is missing or older than 0.4.0. If
+`ovfetch install` fails, it keeps an OpenVINO runtime that's already in the
+prefix and passes `ovfetch verify` (for example, a newer build ovfetch won't
+downgrade), and otherwise stops with ovfetch's error. `--cpu-runtime` installs
+the CPU build on purpose.
 
 Then it asks the session bus to reload, so the daemon is D-Bus-activatable
 straight away, and warns if `bin/` isn't on `PATH`. It does not restart a daemon

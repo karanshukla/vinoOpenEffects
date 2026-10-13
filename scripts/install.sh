@@ -4,12 +4,13 @@
 #   scripts/install.sh                    # to ~/.local, no root needed
 #   sudo scripts/install.sh --prefix /usr/local
 #   scripts/install.sh --no-gui           # daemon and CLI only
+#   scripts/install.sh --cpu-runtime      # CPU onnxruntime even with an NPU
 #
 # Installs binaries, D-Bus interfaces and activation file, the systemd user
 # unit, desktop entry and icons, fetches the sha256-verified ONNX models, and
 # puts an onnxruntime in lib/vinoopeneffects/ort: the OpenVINO build (via
-# ovfetch) when an NPU/GPU is detected, the CPU build otherwise. The daemon uses
-# the NPU when present and falls back to CPU.
+# ovfetch >= 0.4.0) when an NPU/GPU is detected, the CPU build otherwise. A
+# failed ovfetch stops the install rather than falling back to CPU.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,15 +19,36 @@ cd "$repo_root"
 prefix="$HOME/.local"
 gui=1
 models=1
+cpu_runtime=0
+ovfetch_min=0.4.0
 while [ $# -gt 0 ]; do
     case "$1" in
         --prefix) prefix="${2:?--prefix needs a directory}"; shift 2 ;;
         --no-gui) gui=0; shift ;;
         --no-models) models=0; shift ;;
-        -h | --help) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --cpu-runtime) cpu_runtime=1; shift ;;
+        -h | --help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
     esac
 done
+
+die() { echo "install: $*" >&2; exit 1; }
+
+# Settle how onnxruntime will be installed before spending a build on it.
+ort_mode=cpu
+if [ "$cpu_runtime" = 0 ]; then
+    if command -v ovfetch >/dev/null 2>&1; then
+        have="$(ovfetch --version | awk '{print $2}')"
+        if [ "$(printf '%s\n%s\n' "$ovfetch_min" "$have" | sort -V | head -1)" != "$ovfetch_min" ]; then
+            die "ovfetch $have is older than $ovfetch_min: cargo install ovfetch --locked (or pass --cpu-runtime)"
+        fi
+        if ovfetch detect 2>/dev/null | grep -q '"kind"'; then
+            ort_mode=ovfetch
+        fi
+    elif compgen -G '/dev/accel/accel*' >/dev/null; then
+        die "an NPU is present but ovfetch is not installed: cargo install ovfetch --locked (or pass --cpu-runtime)"
+    fi
+fi
 
 bindir="$prefix/bin"
 datadir="$prefix/share"
@@ -68,13 +90,15 @@ fi
 
 ortdir="$prefix/lib/vinoopeneffects/ort"
 echo "==> onnxruntime"
-if command -v ovfetch >/dev/null 2>&1 &&
-    ovfetch detect 2>/dev/null | grep -q '"kind"' &&
-    ovfetch install --prefix "$ortdir"; then
-    :
-else
-    echo "no usable ovfetch/NPU: installing the CPU runtime"
+if [ "$ort_mode" = cpu ]; then
+    echo "no NPU or GPU (or --cpu-runtime): installing the CPU runtime"
     ./scripts/fetch-ort.sh "$ortdir"
+elif ovfetch install --prefix "$ortdir"; then
+    :
+elif ovfetch verify --prefix "$ortdir" >/dev/null 2>&1; then
+    echo "warning: ovfetch did not install (above); keeping the verified OpenVINO runtime already in $ortdir" >&2
+else
+    die "ovfetch failed (above) and $ortdir has no verified OpenVINO runtime; fix that and re-run, or pass --cpu-runtime"
 fi
 
 if [ "$models" = 1 ]; then
