@@ -18,8 +18,7 @@ fps="${FPS:-30}"
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/vinoopeneffects-bench"
 mkdir -p "$cache"
 
-# Public-domain interview (Wikimedia Commons), 1280x720 VP8. Title cards sit
-# between answers, so cut a stretch that is a person talking to camera.
+# Title cards sit between the interview's answers, so the cut keeps only talking to camera.
 src_url="https://upload.wikimedia.org/wikipedia/commons/7/7b/Science_Speaks_-_Talking_to_Women_in_Science_%28Liz%2C_Epidemiologist%29.webm"
 src_sha="097151f59acf2c76fca34fdc84b75e91d16cd7f167b464ada7bb926b13f07017"
 clip="${1:-$cache/clip.webm}"
@@ -49,7 +48,6 @@ rapl_ok=0
 [ -r "$rapl" ] && rapl_ok=1
 [ $rapl_ok = 1 ] || echo "note: $rapl not readable; re-run with sudo for package energy" >&2
 
-# Average battery draw in watts over N seconds, sampled at 1 Hz.
 sample_watts() {
     local n="$1" sum=0 c=0 v
     for _ in $(seq "$n"); do
@@ -59,13 +57,12 @@ sample_watts() {
     python3 -c "print(round($sum / $c / 1e6, 2))"
 }
 
-idle() { # label
-    local w; w=$(sample_watts 20)
-    echo "idle $1: ${w} W (battery)" >&2
+idle() {
+    local label="$1" w; w=$(sample_watts 20)
+    echo "idle $label: ${w} W (battery)" >&2
     echo "$w"
 }
 
-# run_one EP MODE(flat|paced) -> prints a summary line plus power fields
 run_one() {
     local ep="$1" mode="$2" args="" w="" j="" nb0 nb1 r0 r1 t0 t1
     if [ "$mode" = paced ]; then args="--fps $fps --seconds $secs"; else args="--seconds 20"; fi

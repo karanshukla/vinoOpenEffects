@@ -79,7 +79,7 @@ fn blur_scale(radius: usize) -> usize {
 /// `rgb·255/alpha`, i.e. the weighted mean of the background pixels alone —
 /// person pixels (wbg ≈ 0) drop out. `box_blur` then blurs all four channels
 /// so premul and weight stay consistent under the blur.
-#[allow(clippy::too_many_arguments)] // plain geometry args shared by every caller
+#[allow(clippy::too_many_arguments)]
 fn downsample_masked(
     src: &[u8],
     lut: &[u8],
@@ -113,8 +113,6 @@ fn downsample_masked(
             }
             let n = ((y1 - y0) * (x1 - x0)) as u32;
             let d = (y * lw + x) * 4;
-            // Premultiplied color in 0..255: mean over the block of
-            // color·(wbg/255). Alpha carries the mean background weight.
             dst[d] = (acc[0] / n / 255) as u8;
             dst[d + 1] = (acc[1] / n / 255) as u8;
             dst[d + 2] = (acc[2] / n / 255) as u8;
@@ -140,9 +138,7 @@ fn box_blur(
         return;
     }
     tmp.resize(buf.len(), 0);
-    // One scratch sized for both passes (h needs w+1, v needs h+1), reused
-    // across both blur iterations. Index 0 is never written, so it stays 0 —
-    // which the window subtraction at `lo == 0` relies on.
+    // prefix[0] is never written and must stay 0 for the window subtraction at `lo == 0`.
     prefix.resize(w.max(h) + 1, 0);
     for _ in 0..2 {
         box_blur_h(buf, tmp, prefix, w, h, radius);
@@ -151,8 +147,6 @@ fn box_blur(
 }
 
 fn box_blur_h(src: &[u8], dst: &mut [u8], prefix: &mut [i32], w: usize, h: usize, r: usize) {
-    // prefix[i] = running sum of one channel over pixels 0..i; reused across
-    // every (row, channel) to avoid per-iteration allocation on the hot path.
     for y in 0..h {
         let base = y * w * 4;
         for c in 0..4 {
@@ -205,10 +199,10 @@ mod tests {
                 let person = (5..11).contains(&x) && (5..11).contains(&y);
                 let p = (y * w + x) * 4;
                 if person {
-                    img[p] = 255; // red subject
+                    img[p] = 255;
                     lut[y * w + x] = 255;
                 } else {
-                    img[p + 2] = 255; // blue background
+                    img[p + 2] = 255;
                 }
                 img[p + 3] = 255;
             }
@@ -223,7 +217,6 @@ mod tests {
         let mut out = img.clone();
         composite_low(&mut out, &low, w, h, 1, &lut, w, h);
 
-        // Background pixel hugging the subject's left edge: no red leak.
         let edge = (8 * w + 4) * 4;
         assert_eq!(
             out[edge], 0,
@@ -231,7 +224,6 @@ mod tests {
         );
         assert!(out[edge + 2] >= 250, "background color was lost");
 
-        // Subject interior is untouched (fully foreground).
         let inside = (8 * w + 8) * 4;
         assert_eq!(&out[inside..inside + 3], &[255, 0, 0]);
     }

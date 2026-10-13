@@ -17,7 +17,6 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
     let home = dirs::home_dir();
     let home_ref = home.as_deref();
 
-    // 1. Daemon
     let act_files = daemon::probe_activation_files(home_ref);
     let (unit_state, unit_enabled) = daemon::probe_systemd_unit();
     checks.push(daemon::dbus_verdict(
@@ -28,7 +27,6 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
     checks.push(daemon::activation_file_verdict(&act_files));
     checks.push(daemon::systemd_unit_verdict(unit_state, unit_enabled));
 
-    // 2. Inference & NPU
     checks.push(inference::build_feature_verdict(
         inference::probe_built_with_npu(),
     ));
@@ -40,7 +38,6 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
     let accel_count = inference::probe_npu_devices();
     checks.push(inference::npu_hardware_verdict(accel_count));
 
-    // 3. Models
     let search_dirs = models::model_search_dirs(home_ref);
     for m in models::KNOWN_MODELS {
         let (manifest_found, file_found, sha_match, model_path) =
@@ -56,7 +53,6 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
         ));
     }
 
-    // 4. Cameras
     let cameras = camera::probe_cameras();
     checks.push(camera::camera_list_verdict(&cameras));
     let (_cfg_path, cfg_read) = config::probe_config(home_ref);
@@ -68,13 +64,11 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
         .unwrap_or_default();
     checks.push(camera::selected_camera_verdict(&selected_cam, &cameras));
 
-    // 5. Pipeline
     let pw_running = pipeline::probe_pipewire(None);
     checks.push(pipeline::pipewire_verdict(pw_running));
     let vcam_present = pipeline::probe_virtual_camera();
     checks.push(pipeline::virtual_camera_verdict(vcam_present));
 
-    // 6. GUI
     let distro = gui::probe_distro();
     let sink_found = gui::probe_gtk4_sink();
     checks.push(gui::gtk4_sink_verdict(sink_found, distro.as_ref()));
@@ -84,7 +78,6 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
         adw_ver.as_deref(),
     ));
 
-    // 7. Config
     let (cfg_path, cfg_res) = config::probe_config(home_ref);
     checks.push(config::config_verdict(&cfg_path, cfg_res.as_deref()));
 
@@ -129,7 +122,6 @@ mod tests {
 
     #[test]
     fn check_json_shape_is_stable() {
-        // `vinoopeneffects-ctl doctor --json` emits this; keep it script-friendly.
         let json = serde_json::to_value(check(Status::Warn)).unwrap();
         assert_eq!(json["status"], "warn");
         assert!(json.get("fix").is_none(), "fix omitted when None");
@@ -149,8 +141,6 @@ mod tests {
 
     #[test]
     fn run_all_produces_a_check_per_probe() {
-        // Smoke test against whatever host runs the tests: every probe must
-        // return a labelled check without panicking, whatever it finds.
         let checks = run_all(Err("daemon is not running"));
         assert_eq!(checks.len(), 13 + models::KNOWN_MODELS.len());
         for c in &checks {

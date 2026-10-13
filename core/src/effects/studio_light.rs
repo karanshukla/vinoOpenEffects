@@ -6,6 +6,7 @@
 /// subject's mean luma is sampled at.
 const STUDIO_PIVOT_ALPHA: f32 = 0.1;
 const STUDIO_PIVOT_STRIDE: usize = 7;
+const MIN_SUBJECT_COVERAGE_PCT: u64 = 1;
 
 /// EMA of the subject's mean luma (0..1): the pivot contrast scales around,
 /// so contrast never changes how bright the face is overall. `None` until
@@ -50,9 +51,8 @@ fn subject_mean_luma(img: &[u8], lut: &[u8]) -> Option<f32> {
         acc += luma * m;
         weight += m;
     }
-    // Under ~1% coverage the mean is noise (a stray hand, a mask blip).
     let sampled = img.len() / 4 / STUDIO_PIVOT_STRIDE;
-    if weight < 255 * sampled as u64 / 100 {
+    if weight < 255 * sampled as u64 * MIN_SUBJECT_COVERAGE_PCT / 100 {
         return None;
     }
     Some(acc as f32 / (weight as f32 * 255.0))
@@ -87,19 +87,14 @@ pub(crate) fn apply_studio(
     for (px, &m) in img.as_chunks_mut::<4>().0.iter_mut().zip(lut) {
         let m = m as u32;
         let bg_m = 255 - m;
-        // Skip pixels entirely unaffected by either pass (m == 0 and no bg
-        // adjustment) — this is the vast majority when bg_brightness == 0.
         if m == 0 && !has_bg {
             continue;
         }
         for c in 0..3 {
             let p = px[c] as u32;
-            // Foreground blend: lerp(p, adj_fg, m/255)
             let fg = (p * bg_m + adj_fg[px[c] as usize] as u32 * m + 127) / 255;
             let out = if has_bg && bg_m > 0 {
-                // Background blend: lerp(result, adj_bg, bg_m/255)
                 let bg = (p * m + adj_bg[px[c] as usize] as u32 * bg_m + 127) / 255;
-                // Weighted sum of the two blends by the mask
                 (fg * m + bg * bg_m + 127) / 255
             } else {
                 fg
@@ -115,9 +110,6 @@ mod tests {
 
     #[test]
     fn studio_contrast_keeps_subject_brightness() {
-        // A dim subject (luma 80) with a little spread, repeated so the
-        // coarse sampling grid sees every tone; contrast 1.8 about the
-        // subject's own mean must not move the average.
         let tones = [60u8, 70, 80, 90, 100];
         let mut img = Vec::new();
         for i in 0..500 {

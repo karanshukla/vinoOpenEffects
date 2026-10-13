@@ -49,7 +49,6 @@ pub fn build(
         .icon_name("preferences-system-symbolic")
         .build();
 
-    // Camera
     let camera_group = pref_group(
         "Camera",
         "Choose the physical camera vinoOpenEffects captures from",
@@ -84,7 +83,6 @@ pub fn build(
     camera_group.add(&virtual_cam_row);
     page.add(&camera_group);
 
-    // Inference
     let inference_group_box = pref_group(
         "Inference",
         "Machine learning execution provider for effects (hot-swappable)",
@@ -135,7 +133,6 @@ pub fn build(
     inference_group_box.add(&inference_row);
     page.add(&inference_group_box);
 
-    // Bundled models
     let models_group = pref_group(
         "Bundled Models",
         "Run scripts/fetch-models.sh to install missing models",
@@ -157,7 +154,6 @@ pub fn build(
     }
     page.add(&models_group);
 
-    // Startup
     let startup = pref_group("Startup", "Control when the vinoOpenEffects daemon runs");
 
     let keep_running_row = adw::SwitchRow::builder()
@@ -171,7 +167,6 @@ pub fn build(
         .subtitle("Launch the daemon automatically")
         .active(shared::systemd::is_enabled())
         .build();
-    // Moot when boot-autostart is on (the daemon always runs then).
     keep_running_row.set_sensitive(!boot_row.is_active());
 
     let keep_running_for_boot = keep_running_row.clone();

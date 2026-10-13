@@ -121,7 +121,6 @@ mod tests {
         apply_gain(&mut img, 2, 1, &gain, 1.0);
         assert_eq!(&img[..4], &[100, 200, 255, 255]);
         assert_eq!(&img[4..8], &[20, 20, 20, 255]);
-        // Half strength is a gain of 1.5.
         let mut img = vec![100, 100, 100, 255];
         apply_gain(&mut img, 1, 1, &gain, 0.5);
         assert_eq!(img[0], 150);

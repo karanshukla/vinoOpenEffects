@@ -25,6 +25,7 @@ use crate::dbus_client::{CmdTx, GuiCommand};
 /// Covers the camera opening and the models loading on first use; a missing
 /// PipeWire target would otherwise sit silent for pipewiresrc's own 30 s.
 const NO_FRAMES_TIMEOUT_SECS: u32 = 10;
+const NODE_REREGISTER_SECS: u32 = 2;
 
 pub struct Preview {
     /// The framed preview; place this in the window.
@@ -72,7 +73,6 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         .css_classes(["oe-preview-status"])
         .build();
 
-    // centre: shown when the virtual camera can't be reached
     let problem_text = gtk::Label::builder()
         .wrap(true)
         .justify(gtk::Justification::Center)
@@ -107,7 +107,6 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
     problem.append(&problem_text);
     problem.append(&actions);
 
-    // top left: camera picker
     let camera_dropdown = gtk::DropDown::builder()
         .model(&gtk::StringList::new(&["No cameras found"]))
         .tooltip_text("Camera")
@@ -127,7 +126,6 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         })
     };
 
-    // top right: live indicator, shown once frames flow
     let live_label = gtk::Label::new(Some("Virtual camera live"));
     let live_pill = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -147,7 +145,6 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
     );
     live_pill.append(&live_label);
 
-    // bottom left: hold to compare
     let compare_content = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
         .spacing(8)
@@ -166,7 +163,6 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         .css_classes(["oe-pill-button"])
         .build();
 
-    // bottom right: virtual camera node name
     let node_pill = gtk::Label::builder()
         .label(VCAM_NODE_NAME)
         .tooltip_text("Pick this camera in Zoom, OBS or your browser")
@@ -224,7 +220,6 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         });
     }
 
-    // Run the pipeline only while the preview is on screen.
     {
         let preview_map = Rc::downgrade(&preview);
         preview.frame.connect_map(move |_| {
@@ -348,8 +343,7 @@ impl Preview {
                     .output()
             })
             .await;
-            // Give the node a moment to re-register before reconnecting.
-            glib::timeout_future_seconds(2).await;
+            glib::timeout_future_seconds(NODE_REREGISTER_SECS).await;
             let Some(preview) = weak.upgrade() else {
                 return;
             };
@@ -384,7 +378,6 @@ impl Preview {
         let paintable = sink.property::<gtk::gdk::Paintable>("paintable");
         self.picture.set_paintable(Some(&paintable));
 
-        // Swap the hint for the live pill once the first frame arrives.
         let status = self.status.downgrade();
         let live_pill = self.live_pill.downgrade();
         let problem = self.problem.downgrade();

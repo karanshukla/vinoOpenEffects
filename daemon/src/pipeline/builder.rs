@@ -19,6 +19,8 @@ pub struct BuiltCapture {
     pipeline: gst::Pipeline,
 }
 
+const PLAYING_TIMEOUT: gst::ClockTime = gst::ClockTime::from_seconds(5);
+
 impl BuiltCapture {
     pub fn start(&self) -> Result<()> {
         if let Err(err) = self.pipeline.set_state(gst::State::Playing) {
@@ -30,11 +32,7 @@ impl BuiltCapture {
             return Err(anyhow::Error::new(err).context("set pipeline to playing"));
         }
 
-        // Block until PLAYING (or failure) up to 5 s so we surface real
-        // negotiation errors from elements (camera caps, etc.) instead of
-        // returning success on an async transition that later fails.
-        let (result, _current, _pending) =
-            self.pipeline.state(Some(gst::ClockTime::from_seconds(5)));
+        let (result, _current, _pending) = self.pipeline.state(Some(PLAYING_TIMEOUT));
         if result.is_err() {
             let bus_err = drain_bus_error(&self.pipeline);
             let _ = self.pipeline.set_state(gst::State::Null);
@@ -141,18 +139,11 @@ pub fn build_capture_pipeline(
         .build()
         .context("create source capsfilter")?;
 
-    // Many cameras (including UVC webcams) only advertise compressed formats such
-    // as image/jpeg over PipeWire/V4L2. decodebin transparently plugs a decoder
-    // when needed and passes raw video through otherwise.
     let decoder = gst::ElementFactory::make("decodebin")
         .name("oe_in_decode")
         .build()
         .context("create input decodebin")?;
 
-    // Convert the camera-native pixel format to I420. The source capsfilter
-    // already pinned the dimensions/rate to the output mode, so videoconvert
-    // only changes colorspace/pixel-format and videoscale is a no-op kept as a
-    // safety net — it never has to change the aspect ratio.
     let convert = gst::ElementFactory::make("videoconvert")
         .name("oe_in_convert")
         .build()
@@ -168,9 +159,6 @@ pub fn build_capture_pipeline(
 
     let effects_bin = effects::build_effects_bin(app)?;
 
-    // appsink delivers each processed frame to the bridge. drop + max-buffers=1
-    // keeps only the newest frame on the sink side too, matching the bridge's
-    // latest-frame semantics for a live camera.
     let appsink = gst_app::AppSink::builder()
         .name("oe_appsink")
         .caps(&output_caps(fmt))
@@ -201,9 +189,6 @@ pub fn build_capture_pipeline(
         appsink.upcast_ref(),
     ])?;
 
-    // source → src_filter → decoder is a static link. decoder → convert is
-    // linked from decodebin's pad-added signal because decodebin only exposes
-    // its src pad after caps negotiation completes.
     gst::Element::link_many([&source, &src_filter, &decoder])
         .context("link source -> src caps -> decoder")?;
     let convert_weak = convert.downgrade();
@@ -262,7 +247,6 @@ pub(crate) fn resolve_camera(app: &AppState) -> Option<cameras::CameraInfo> {
         if let Some(info) = cameras::enumerate().into_iter().find(|c| c.id == selected) {
             return Some(info);
         }
-        // Honour an explicit /dev/videoN even if DeviceMonitor missed it.
         if selected.starts_with("/dev/video") {
             return Some(cameras::CameraInfo {
                 id: selected.to_string(),

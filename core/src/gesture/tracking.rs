@@ -69,9 +69,8 @@ fn track_hands(
     stride: usize,
 ) -> Vec<HandLandmarks> {
     if tracks.len() < MAX_TRACKS && acquire {
-        // Landmarks only run once palm finds a hand, so on its own the hand
-        // model idles out while palm keeps running. Load and touch it with
-        // palm so the first gesture never pays a model load on this thread.
+        // Touch the hand model alongside palm so it never idles out and the first gesture pays no
+        // load.
         let _ = engine.hand();
         let palms = match engine.palm() {
             Some(model) => model

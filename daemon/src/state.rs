@@ -492,8 +492,6 @@ mod tests {
 
     #[test]
     fn every_reported_param_is_settable() {
-        // Whatever GetParams reports, SetParam must accept back (except the
-        // `enabled` flag, which goes through SetEnabled).
         let mut state = default_state();
         for id in EFFECT_IDS {
             let params = state.effect_params(id).unwrap();
@@ -544,7 +542,6 @@ mod tests {
 
     #[test]
     fn set_param_accepts_unsigned_for_signed_params() {
-        // The CLI's `set` sends small positive numbers as u32.
         let mut state = default_state();
         assert!(state.set_param("studio_light", "brightness", &u32_value(40)));
         let sl = state.effect_params("studio_light").unwrap();

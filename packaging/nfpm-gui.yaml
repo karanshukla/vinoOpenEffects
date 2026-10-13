@@ -1,9 +1,3 @@
-# vinoopeneffects — the GTK4/libadwaita GUI client. Stateless D-Bus consumer;
-# requires the daemon (vinoopeneffects-daemon). The vinoopeneffects-daemon dependency resolves
-# automatically whether installing from local files (pass both) or a repo.
-#
-#   VERSION=0.1.0 ARCH=amd64 nfpm pkg -f packaging/nfpm-gui.yaml -p deb -t dist/
-
 name: vinoopeneffects
 arch: ${ARCH}
 version: ${VERSION}
@@ -16,10 +10,6 @@ license: GPL-3.0-or-later
 section: video
 priority: optional
 
-# Hard fork of funinkina/openeffects: the old package names are superseded.
-# nfpm maps `replaces` to deb Replaces / rpm Obsoletes / arch replaces, and
-# `conflicts` to the matching Conflicts field. Leftover files are also swept by
-# packaging/postinstall.sh.
 replaces:
   - openeffects
 conflicts:
@@ -29,7 +19,6 @@ contents:
   - src: target/release/vinoopeneffects
     dst: /usr/bin/vinoopeneffects
 
-  # App icon + desktop entry
   - src: data/icons/io.github.karanshukla.vinoopeneffects.svg
     dst: /usr/share/icons/hicolor/scalable/apps/io.github.karanshukla.vinoopeneffects.svg
   - src: data/icons/io.github.karanshukla.vinoopeneffects-symbolic.svg
@@ -44,7 +33,6 @@ overrides:
       - libgtk-4-1
       # AdwToggleGroup, used by the effect pages, is new in 1.7.
       - libadwaita-1-0 (>= 1.7)
-      # gtk4paintablesink, used by the GUI's live preview
       - gstreamer1.0-gtk4
     scripts:
       postinstall: packaging/postinstall.sh
@@ -54,7 +42,6 @@ overrides:
       - vinoopeneffects-daemon
       - gtk4
       - libadwaita >= 1.7
-      # gtk4paintablesink, used by the GUI's live preview (Fedora: gst-plugins-rs)
       - gstreamer1-plugin-gtk4
     scripts:
       postinstall: packaging/postinstall.sh
@@ -64,6 +51,4 @@ overrides:
       - vinoopeneffects-daemon
       - gtk4
       - libadwaita>=1.7
-      # gtk4paintablesink, used by the GUI's live preview
       - gst-plugin-gtk4
-    # Arch updates the icon cache / desktop database via pacman hooks.

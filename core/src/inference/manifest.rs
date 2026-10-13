@@ -1,6 +1,3 @@
-// Fields mirror the full PRD §9.1 manifest schema; most are read by the
-// model-loading code added in Stage 3/4 (Portrait Blur / Center Stage
-// inference), not yet present.
 #![allow(dead_code)]
 
 use std::collections::HashMap;

@@ -78,7 +78,6 @@ pub fn migrate_in(config_dir: &Path, data_dir: &Path) -> MigrationReport {
         &mut r,
     );
     if data_moved {
-        // state.toml stores absolute background paths under the data dir.
         rewrite_state_paths(
             &config_dir.join(NEW_APP_DIR).join("state.toml"),
             &data_dir.join(OLD_APP_DIR),
@@ -127,7 +126,7 @@ fn move_item(src: &Path, dst: &Path, r: &mut MigrationReport) -> bool {
                 .push(format!("moved {} -> {}", src.display(), dst.display()));
             true
         }
-        // Lost a race with the daemon/GUI starting concurrently.
+        // NotFound means the daemon or GUI migrated it concurrently.
         Err(e) if e.kind() == io::ErrorKind::NotFound => false,
         Err(e) => {
             r.errors.push(format!(
@@ -267,7 +266,6 @@ fn migrate_wants(user_units: &Path, r: &mut MigrationReport) {
         let old_link = dir.join(OLD_UNIT);
         let target = match fs::read_link(&old_link) {
             Ok(t) => t,
-            // Absent, or not a symlink: nothing to do.
             Err(_) => continue,
         };
         let new_link = dir.join(NEW_UNIT);
@@ -495,7 +493,6 @@ mod tests {
         assert!(!moved && r.is_empty());
         let mut r = MigrationReport::default();
         rewrite_conf(&c.join("gone.conf"), &mut r);
-        // A vanished conf is reported, but never panics.
         assert_eq!(r.errors.len(), 1);
     }
 }

@@ -7,8 +7,6 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 models_src="$repo_root/data/models"
-# Destination defaults to the per-user XDG model dir, but packaging overrides it
-# via VINOOPENEFFECTS_MODELS_DEST to stage models into a package build tree.
 dest_root="${VINOOPENEFFECTS_MODELS_DEST:-${XDG_DATA_HOME:-$HOME/.local/share}/vinoopeneffects/models}"
 
 for manifest in "$models_src"/*/manifest.toml; do

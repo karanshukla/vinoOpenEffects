@@ -46,7 +46,7 @@ async fn run() -> anyhow::Result<()> {
         )
         .init();
 
-    // Move pre-fork `openeffects` state first, before config and models are read.
+    // Must run before config and models are read.
     shared::migrate::migrate_legacy_paths().log();
 
     let start_pipeline = std::env::args().any(|arg| arg == "--start");
@@ -80,7 +80,6 @@ async fn run() -> anyhow::Result<()> {
     let state = Arc::new(RwLock::new(DaemonState::new(app, models_ready)));
     let (pipeline_tx, pipeline_rx) = mpsc::channel(32);
     let (event_tx, mut event_rx) = mpsc::channel(32);
-    // A `Quit` D-Bus call sends on this channel to drive a clean process exit.
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     let worker = pipeline::spawn_worker(pipeline_rx, event_tx);
 
@@ -122,9 +121,6 @@ async fn run() -> anyhow::Result<()> {
                         state.status = DaemonStatus::Running;
                         state.output_sink = sink;
                         state.last_error = None;
-                        // Note: virtual_camera_verified is intentionally left as-is.
-                        // It is a one-time fact set when the native provide node
-                        // registers, and Started now fires on every consumer connect.
                         status_change = Some((old_status, state.status));
                     }
                     PipelineEvent::Idle => {
@@ -182,7 +178,6 @@ async fn run() -> anyhow::Result<()> {
     }
 
     info!("vinoopeneffects-daemon is running on the session bus");
-    // SIGTERM covers systemd and manual kills.
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .context("install SIGTERM handler")?;
     tokio::select! {

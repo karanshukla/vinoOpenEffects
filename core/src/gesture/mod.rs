@@ -59,8 +59,7 @@ fn open_palm(p: &[P; 21]) -> Option<Gesture> {
     if !FINGERS.iter().all(|&(m, pi, t)| !curled(p, m, pi, t)) {
         return None;
     }
-    // Thumb extended: tip farther from the wrist than its IP joint.
-    if dist(p[4], p[0]) <= dist(p[3], p[0]) {
+    if thumb_folded(p) {
         return None;
     }
     Some(Gesture::Wave)
@@ -71,19 +70,17 @@ fn thumb_gesture(p: &[P; 21]) -> Option<Gesture> {
     if pw < 1e-4 {
         return None;
     }
-    // All four fingers curled.
     if !FINGERS.iter().all(|&(m, pi, t)| curled(p, m, pi, t)) {
         return None;
     }
-    // Thumb extended: tip farther from the wrist than the IP joint, and well
-    // clear of the index MCP.
-    if dist(p[4], p[0]) <= dist(p[3], p[0]) || dist(p[4], p[5]) < 0.5 * pw {
+    let thumb_hugs_index = dist(p[4], p[5]) < 0.5 * pw;
+    if thumb_folded(p) || thumb_hugs_index {
         return None;
     }
-    // Thumb pointing roughly vertical (tip vs thumb MCP).
     let vx = p[4][0] - p[2][0];
     let vy = p[4][1] - p[2][1];
-    if vy.abs() <= vx.abs() {
+    let thumb_sideways = vy.abs() <= vx.abs();
+    if thumb_sideways {
         return None;
     }
     Some(if vy < 0.0 {
@@ -98,15 +95,11 @@ fn is_heart(a: &[P; 21], b: &[P; 21]) -> bool {
     if scale < 1e-4 {
         return false;
     }
-    // Thumb tips and index tips of the two hands meet (forming the heart).
-    if dist(a[4], b[4]) > 1.2 * scale || dist(a[8], b[8]) > 1.2 * scale {
+    let tips_apart = dist(a[4], b[4]) > 1.2 * scale || dist(a[8], b[8]) > 1.2 * scale;
+    let index_below_thumb = a[8][1] >= a[4][1] || b[8][1] >= b[4][1];
+    if tips_apart || index_below_thumb {
         return false;
     }
-    // Index tips above their thumb tips (heart apex at the bottom).
-    if a[8][1] >= a[4][1] || b[8][1] >= b[4][1] {
-        return false;
-    }
-    // Lower fingers mostly curled on each hand (tolerate one stray).
     lower_curled(a) >= 2 && lower_curled(b) >= 2
 }
 
@@ -116,6 +109,11 @@ fn lower_curled(p: &[P; 21]) -> usize {
         .iter()
         .filter(|&&(m, pi, t)| curled(p, m, pi, t))
         .count()
+}
+
+/// The thumb tip is no farther from the wrist than its IP joint.
+fn thumb_folded(p: &[P; 21]) -> bool {
+    dist(p[4], p[0]) <= dist(p[3], p[0])
 }
 
 /// A finger is curled when its tip is closer to the wrist than its PIP joint.
@@ -148,8 +146,7 @@ mod tests {
     /// with an explicit thumb tip. Wrist at (0.5, 0.8).
     fn curled_hand(thumb_tip: [f32; 3], thumb_mcp: [f32; 3]) -> [[f32; 3]; 21] {
         let mut p = [[0.0f32; 3]; 21];
-        p[0] = [0.5, 0.8, 0.0]; // wrist
-        // thumb chain (1 CMC, 2 MCP, 3 IP, 4 TIP)
+        p[0] = [0.5, 0.8, 0.0];
         p[1] = [0.46, 0.76, 0.0];
         p[2] = thumb_mcp;
         p[3] = [
@@ -158,15 +155,13 @@ mod tests {
             0.0,
         ];
         p[4] = thumb_tip;
-        // Four fingers: MCP high (far from wrist), PIP a bit lower, tip folded
-        // back near the wrist so dist(tip,wrist) < dist(pip,wrist).
         let cols = [0.55, 0.52, 0.49, 0.46];
         for (i, &cx) in cols.iter().enumerate() {
             let base = 5 + i * 4;
-            p[base] = [cx, 0.65, 0.0]; // MCP
-            p[base + 1] = [cx, 0.58, 0.0]; // PIP (highest, far from wrist)
-            p[base + 2] = [cx, 0.63, 0.0]; // DIP
-            p[base + 3] = [cx, 0.66, 0.0]; // TIP (folded, near wrist)
+            p[base] = [cx, 0.65, 0.0];
+            p[base + 1] = [cx, 0.58, 0.0];
+            p[base + 2] = [cx, 0.63, 0.0];
+            p[base + 3] = [cx, 0.66, 0.0];
         }
         p
     }
@@ -179,24 +174,21 @@ mod tests {
 
     #[test]
     fn classifies_thumbs_down() {
-        // Wrist near the top, thumb pointing down (tip below the thumb MCP).
         let mut p = curled_hand([0.41, 0.95, 0.0], [0.43, 0.75, 0.0]);
-        // Move the curled fingers above the wrist so they still fold back.
         p[0] = [0.5, 0.55, 0.0];
         let cols = [0.55, 0.52, 0.49, 0.46];
         for (i, &cx) in cols.iter().enumerate() {
             let base = 5 + i * 4;
-            p[base] = [cx, 0.70, 0.0]; // MCP
-            p[base + 1] = [cx, 0.77, 0.0]; // PIP (far from wrist)
+            p[base] = [cx, 0.70, 0.0];
+            p[base + 1] = [cx, 0.77, 0.0];
             p[base + 2] = [cx, 0.72, 0.0];
-            p[base + 3] = [cx, 0.69, 0.0]; // TIP (near wrist)
+            p[base + 3] = [cx, 0.69, 0.0];
         }
         assert_eq!(classify(&[hand(p)]), Some(Gesture::ThumbsDown));
     }
 
     #[test]
     fn classifies_wave() {
-        // All fingers and the thumb extended (tips far from the wrist) → wave.
         let mut p = [[0.0f32; 3]; 21];
         p[0] = [0.5, 0.9, 0.0];
         p[1] = [0.4, 0.85, 0.0];
@@ -209,70 +201,76 @@ mod tests {
             p[base] = [cx, 0.65, 0.0];
             p[base + 1] = [cx, 0.5, 0.0];
             p[base + 2] = [cx, 0.4, 0.0];
-            p[base + 3] = [cx, 0.3, 0.0]; // tip far from wrist → extended
+            p[base + 3] = [cx, 0.3, 0.0];
         }
         assert_eq!(classify(&[hand(p)]), Some(Gesture::Wave));
     }
 
     #[test]
     fn half_open_hand_is_none() {
-        // Fingers extended but thumb folded across the palm → neither wave nor
-        // thumb gesture.
         let mut p = [[0.0f32; 3]; 21];
         p[0] = [0.5, 0.9, 0.0];
         p[1] = [0.46, 0.86, 0.0];
         p[2] = [0.44, 0.83, 0.0];
         p[3] = [0.45, 0.82, 0.0];
-        p[4] = [0.47, 0.84, 0.0]; // thumb tip near wrist → folded
+        p[4] = [0.47, 0.84, 0.0];
         let cols = [0.55, 0.52, 0.49, 0.46];
         for (i, &cx) in cols.iter().enumerate() {
             let base = 5 + i * 4;
             p[base] = [cx, 0.65, 0.0];
             p[base + 1] = [cx, 0.5, 0.0];
             p[base + 2] = [cx, 0.4, 0.0];
-            p[base + 3] = [cx, 0.3, 0.0]; // extended
+            p[base + 3] = [cx, 0.3, 0.0];
         }
         assert_eq!(classify(&[hand(p)]), None);
     }
 
     #[test]
     fn sideways_thumb_is_none() {
-        // Thumb extended horizontally → neither up nor down.
         let p = curled_hand([0.2, 0.69, 0.0], [0.43, 0.70, 0.0]);
         assert_eq!(classify(&[hand(p)]), None);
     }
 
+    fn heart_hand(sign: f32, stray_fingers: usize) -> HandLandmarks {
+        let mut p = [[0.0f32; 3]; 21];
+        p[0] = [0.5 + sign * 0.2, 0.8, 0.0];
+        p[5] = [0.5 + sign * 0.12, 0.55, 0.0];
+        p[6] = [0.5 + sign * 0.08, 0.5, 0.0];
+        p[7] = [0.5 + sign * 0.04, 0.46, 0.0];
+        p[8] = [0.5 + sign * 0.01, 0.42, 0.0];
+        p[2] = [0.5 + sign * 0.13, 0.6, 0.0];
+        p[3] = [0.5 + sign * 0.06, 0.52, 0.0];
+        p[4] = [0.5 + sign * 0.01, 0.48, 0.0];
+        let lower = [(9usize, 10usize, 12usize), (13, 14, 16), (17, 18, 20)];
+        for (i, &(m, pi, t)) in lower.iter().enumerate() {
+            let cx = 0.5 + sign * 0.16;
+            p[m] = [cx, 0.6, 0.0];
+            p[pi] = [cx, 0.55, 0.0];
+            p[t] = if i < stray_fingers {
+                [cx, 0.3, 0.0]
+            } else {
+                [cx, 0.66, 0.0]
+            };
+        }
+        hand(p)
+    }
+
     #[test]
     fn classifies_two_hand_heart() {
-        // Two mirrored hands whose thumb tips and index tips meet near the
-        // center, index tips above the thumb tips, lower fingers curled.
-        let mk = |sign: f32| {
-            let mut p = [[0.0f32; 3]; 21];
-            let wrist_x = 0.5 + sign * 0.2;
-            p[0] = [wrist_x, 0.8, 0.0];
-            // index MCP/PIP and tip near center-top
-            p[5] = [0.5 + sign * 0.12, 0.55, 0.0];
-            p[6] = [0.5 + sign * 0.08, 0.5, 0.0];
-            p[7] = [0.5 + sign * 0.04, 0.46, 0.0];
-            p[8] = [0.5 + sign * 0.01, 0.42, 0.0]; // index tip (top, near center)
-            // thumb tip just below index tip, near center
-            p[2] = [0.5 + sign * 0.13, 0.6, 0.0];
-            p[3] = [0.5 + sign * 0.06, 0.52, 0.0];
-            p[4] = [0.5 + sign * 0.01, 0.48, 0.0]; // thumb tip below index tip
-            // palm width reference (index MCP 5 to pinky MCP 17)
-            p[17] = [0.5 + sign * 0.2, 0.6, 0.0];
-            // middle/ring/pinky curled (tips near wrist)
-            for &(m, pi, t) in &[(9usize, 10usize, 12usize), (13, 14, 16), (17, 18, 20)] {
-                let cx = 0.5 + sign * 0.16;
-                p[m] = [cx, 0.6, 0.0];
-                p[pi] = [cx, 0.55, 0.0]; // PIP far from wrist
-                p[t] = [cx, 0.66, 0.0]; // tip near wrist → curled
-            }
-            p
-        };
-        let left = hand(mk(-1.0));
-        let right = hand(mk(1.0));
-        assert_eq!(classify(&[left, right]), Some(Gesture::Heart));
+        let hands = [heart_hand(-1.0, 0), heart_hand(1.0, 0)];
+        assert_eq!(classify(&hands), Some(Gesture::Heart));
+    }
+
+    #[test]
+    fn heart_tolerates_one_stray_lower_finger() {
+        let hands = [heart_hand(-1.0, 1), heart_hand(1.0, 1)];
+        assert_eq!(classify(&hands), Some(Gesture::Heart));
+    }
+
+    #[test]
+    fn heart_rejects_two_stray_lower_fingers() {
+        let hands = [heart_hand(-1.0, 0), heart_hand(1.0, 2)];
+        assert_ne!(classify(&hands), Some(Gesture::Heart));
     }
 
     #[test]

@@ -149,8 +149,6 @@ mod imp {
                         .default_value(0.0)
                         .build(),
                     glib::ParamSpecBoolean::builder("reactions-enabled").build(),
-                    // Write-only one-shot: setting it (even to a repeated value)
-                    // fires a burst of that reaction id.
                     glib::ParamSpecString::builder("trigger-reaction")
                         .flags(glib::ParamFlags::WRITABLE)
                         .build(),
@@ -219,9 +217,6 @@ mod imp {
                 _ => unimplemented!(),
             }
             let active = state.effects.settings.active();
-            // A burst must keep the filter live even with every effect off, so a
-            // trigger always disables passthrough; it is restored lazily in
-            // transform once the burst drains.
             let triggered = pspec.name() == "trigger-reaction";
             drop(state);
             self.obj().set_passthrough(!active && !triggered);
@@ -246,7 +241,7 @@ mod imp {
                 "studio-light-contrast" => s.studio_contrast.to_value(),
                 "studio-light-bg-brightness" => s.studio_bg_brightness.to_value(),
                 "reactions-enabled" => s.reactions_enabled.to_value(),
-                "trigger-reaction" => "".to_value(), // write-only; defensive
+                "trigger-reaction" => "".to_value(),
                 "inference-provider" => engine.provider.to_value(),
                 "inference-generation" => engine.generation.to_value(),
                 "inference-active" => engine.active.to_value(),
@@ -334,17 +329,11 @@ mod imp {
 
             let mut state = self.state.lock().unwrap();
             if !state.effects.busy() {
-                // No effect is on and no manual burst is in flight: restore
-                // passthrough so we stop being handed frames. (Fallback if this
-                // ever misbehaves: drop the set_passthrough call and just return
-                // — that costs one buffer map per idle frame.)
                 drop(state);
                 self.obj().set_passthrough(true);
                 return Ok(gst::FlowSuccess::Ok);
             }
 
-            // Pack the (possibly strided) plane into a tight RGBA buffer,
-            // reusing the canvas allocation across frames.
             let mut img = std::mem::take(&mut state.canvas);
             pack_into(plane, &mut img, w, h, stride);
             state.effects.process(&mut img, w, h);
@@ -400,7 +389,6 @@ mod imp {
             assert!(detail.is_some(), "the CPU fallback must say why");
             assert_eq!(element.state.lock().unwrap().effects.engine.provider, "npu");
 
-            // Switching away clears the stale fallback reason.
             let (active, detail) = element.swap_provider("cpu").expect("swap to cpu");
             assert_eq!((active.as_str(), detail), ("cpu", None));
         }

@@ -36,6 +36,7 @@ const CS_BREACH_ZOOM_HI: f32 = 1.85;
 /// returns to the comfort zone before confirming never reframes at all.
 const CS_CONFIRM: u32 = 30;
 const CS_FAST_CONFIRM: u32 = 9;
+const EYES_ABOVE_FACE_CENTER: f32 = 0.25;
 
 /// EMA-smoothed crop window in normalized frame coordinates. `zf` is the
 /// fraction of each axis the crop spans (1.0 = full frame, smaller = zoomed
@@ -103,9 +104,6 @@ impl CenterStage {
             self.faces = faces;
         }
 
-        // Framing is driven by the face's eye landmarks. When no face is found
-        // the target is simply held, so brief look-aways don't make the crop
-        // drift.
         let subject = subject_box(&self.faces, &settings.cs_mode);
         if let Some(raw) = subject.map(|s| crop_target(Some(s), &settings.cs_zoom)) {
             self.update_target(raw);
@@ -130,9 +128,6 @@ impl CenterStage {
     /// moves the crop.
     fn update_target(&mut self, raw: CropState) {
         let t = self.target;
-        // Errors are relative to the committed crop's span: what matters
-        // visually is how far the subject wandered within the current framing,
-        // so a zoomed-in crop is proportionally more sensitive.
         let span = t.zf.max(CS_MIN_CROP);
         let ex = (raw.cx - t.cx).abs() / span;
         let ey = (raw.cy - t.cy).abs() / span;
@@ -245,8 +240,6 @@ fn subject_box(faces: &[Face], mode: &str) -> Option<(f32, f32, f32, SubjectKind
         return None;
     }
     if mode == "group" {
-        // Union of per-face head boxes; expression-stable since it's the
-        // outer extent of all faces, padded by the average face height.
         let (mut x0, mut y0, mut x1, mut y1) = (1.0f32, 1.0f32, 0.0f32, 0.0f32);
         let mut height_sum = 0.0f32;
         for f in faces {
@@ -266,9 +259,7 @@ fn subject_box(faces: &[Face], mode: &str) -> Option<(f32, f32, f32, SubjectKind
     }
     let best = faces.iter().max_by(|a, b| a.score.total_cmp(&b.score))?;
     let (cx, cy) = if best.eye_dist > 0.0 {
-        // Eye midpoint, nudged down toward the face center (eyes sit above
-        // it) so the crop has balanced forehead/chin headroom.
-        (best.eye_cx, best.eye_cy + best.h * 0.25)
+        (best.eye_cx, best.eye_cy + best.h * EYES_ABOVE_FACE_CENTER)
     } else {
         (best.cx, best.cy)
     };

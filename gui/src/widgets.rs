@@ -146,7 +146,6 @@ fn slider_row(
         .draw_value(false)
         .hexpand(true)
         .build();
-    // Center detent on bipolar ranges (e.g. -100..100): a visual zero anchor.
     if min < 0.0 && max > 0.0 {
         scale.add_mark(0.0, gtk::PositionType::Bottom, None);
     }

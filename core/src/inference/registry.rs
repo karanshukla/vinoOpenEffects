@@ -4,7 +4,6 @@ use super::manifest::ModelManifest;
 
 /// A model whose manifest parsed and whose variant file is present and
 /// sha256-verified.
-// Consumed by the Stage 3/4 model loaders, not yet present.
 #[allow(dead_code)]
 pub struct ResolvedModel {
     pub manifest: ModelManifest,

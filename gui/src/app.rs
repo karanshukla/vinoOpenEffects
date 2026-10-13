@@ -48,10 +48,8 @@ pub fn build_window(
     install_css();
     let gui_config = Rc::new(RefCell::new(config));
 
-    // Preferences dialog (camera, engine info, model library, startup)
     let (prefs_dialog, prefs_widgets) = preferences::build(&cmd_tx, Rc::clone(&gui_config));
 
-    // Effect cards, stacked in the controls column
     let cs_widgets = center_stage::build(&cmd_tx);
     let bg_widgets = background::build(&cmd_tx);
     let sl_widgets = studio_light::build(&cmd_tx);
@@ -78,7 +76,6 @@ pub fn build_window(
         .child(&cards)
         .build();
 
-    // Live preview, leading the window
     let preview = preview::build(&cmd_tx, Rc::clone(&prefs_widgets.camera_ids));
     preview.frame.set_margin_top(16);
     preview.frame.set_margin_bottom(16);
@@ -93,18 +90,8 @@ pub fn build_window(
     body.append(&preview.frame);
     body.append(&controls);
 
-    // Primary menu (Preferences / About), right side of the header
-    let menu = gio::Menu::new();
-    menu.append(Some("Preferences"), Some("win.preferences"));
-    menu.append(Some("About vinoOpenEffects"), Some("win.about"));
-    let menu_button = gtk::MenuButton::builder()
-        .icon_name("open-menu-symbolic")
-        .menu_model(&menu)
-        .primary(true)
-        .tooltip_text("Main Menu")
-        .build();
+    let menu_button = build_primary_menu();
 
-    // Master effects switch (left of header): off = passthrough camera
     let bypass_label = gtk::Label::builder()
         .label("Effects on")
         .css_classes(["heading"])
@@ -120,7 +107,6 @@ pub fn build_window(
         let bypass_label = bypass_label.clone();
         bypass_switch.connect_active_notify(move |sw| {
             set_effects_label(&bypass_label, sw.is_active());
-            // Switch on = effects active = bypass off.
             let _ = cmd_tx.send(GuiCommand::SetBypass {
                 on: !sw.is_active(),
             });
@@ -137,7 +123,6 @@ pub fn build_window(
     header.pack_start(&bypass_box);
     header.pack_end(&menu_button);
 
-    // Connection-trouble banner, sits just under the header.
     let banner = adw::Banner::builder().revealed(false).build();
 
     let toolbar = adw::ToolbarView::new();
@@ -155,43 +140,9 @@ pub fn build_window(
         .content(&toolbar)
         .build();
 
-    // Narrow windows: stack a shorter preview above the controls.
-    if let Ok(condition) = adw::BreakpointCondition::parse(NARROW_BREAKPOINT) {
-        let breakpoint = adw::Breakpoint::new(condition);
-        breakpoint.add_setter(
-            &body,
-            "orientation",
-            Some(&gtk::Orientation::Vertical.to_value()),
-        );
-        breakpoint.add_setter(&preview.frame, "vexpand", Some(&false.to_value()));
-        breakpoint.add_setter(
-            &preview.frame,
-            "height-request",
-            Some(&NARROW_PREVIEW_HEIGHT.to_value()),
-        );
-        breakpoint.add_setter(&preview.frame, "margin-end", Some(&16.to_value()));
-        breakpoint.add_setter(&preview.frame, "margin-bottom", Some(&0.to_value()));
-        breakpoint.add_setter(&controls, "width-request", Some(&(-1).to_value()));
-        breakpoint.add_setter(&cards, "margin-start", Some(&16.to_value()));
-        breakpoint.add_setter(&preview.live_label, "label", Some(&"Live".to_value()));
-        breakpoint.add_setter(&preview.node_pill, "visible", Some(&false.to_value()));
-        window.add_breakpoint(breakpoint);
-    }
+    add_narrow_breakpoint(&window, &body, &preview, &controls, &cards);
 
-    // Primary menu actions
-    let action_preferences = gio::SimpleAction::new("preferences", None);
-    {
-        let window = window.clone();
-        action_preferences.connect_activate(move |_, _| prefs_dialog.present(Some(&window)));
-    }
-    window.add_action(&action_preferences);
-
-    let action_about = gio::SimpleAction::new("about", None);
-    {
-        let window = window.clone();
-        action_about.connect_activate(move |_, _| about::present(&window));
-    }
-    window.add_action(&action_about);
+    install_menu_actions(&window, prefs_dialog);
 
     let comparing = Rc::new(Cell::new(false));
     wire_compare(&preview.compare, &bypass_switch, &cmd_tx, &comparing);
@@ -217,7 +168,6 @@ pub fn build_window(
         let gui_config = Rc::clone(&gui_config);
         let quitting = Rc::clone(&quitting);
         window.connect_close_request(move |_| {
-            // Second close while the Quit is in flight: just let it close.
             if quitting.get() {
                 return glib::Propagation::Proceed;
             }
@@ -329,7 +279,63 @@ fn install_css() {
     }
 }
 
-// Apply daemon state updates
+fn build_primary_menu() -> gtk::MenuButton {
+    let menu = gio::Menu::new();
+    menu.append(Some("Preferences"), Some("win.preferences"));
+    menu.append(Some("About vinoOpenEffects"), Some("win.about"));
+    gtk::MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .menu_model(&menu)
+        .primary(true)
+        .tooltip_text("Main Menu")
+        .build()
+}
+
+fn add_narrow_breakpoint(
+    window: &ApplicationWindow,
+    body: &gtk::Box,
+    preview: &Preview,
+    controls: &gtk::ScrolledWindow,
+    cards: &gtk::Box,
+) {
+    if let Ok(condition) = adw::BreakpointCondition::parse(NARROW_BREAKPOINT) {
+        let breakpoint = adw::Breakpoint::new(condition);
+        breakpoint.add_setter(
+            body,
+            "orientation",
+            Some(&gtk::Orientation::Vertical.to_value()),
+        );
+        breakpoint.add_setter(&preview.frame, "vexpand", Some(&false.to_value()));
+        breakpoint.add_setter(
+            &preview.frame,
+            "height-request",
+            Some(&NARROW_PREVIEW_HEIGHT.to_value()),
+        );
+        breakpoint.add_setter(&preview.frame, "margin-end", Some(&16.to_value()));
+        breakpoint.add_setter(&preview.frame, "margin-bottom", Some(&0.to_value()));
+        breakpoint.add_setter(controls, "width-request", Some(&(-1).to_value()));
+        breakpoint.add_setter(cards, "margin-start", Some(&16.to_value()));
+        breakpoint.add_setter(&preview.live_label, "label", Some(&"Live".to_value()));
+        breakpoint.add_setter(&preview.node_pill, "visible", Some(&false.to_value()));
+        window.add_breakpoint(breakpoint);
+    }
+}
+
+fn install_menu_actions(window: &ApplicationWindow, prefs_dialog: adw::PreferencesDialog) {
+    let action_preferences = gio::SimpleAction::new("preferences", None);
+    {
+        let window = window.clone();
+        action_preferences.connect_activate(move |_, _| prefs_dialog.present(Some(&window)));
+    }
+    window.add_action(&action_preferences);
+
+    let action_about = gio::SimpleAction::new("about", None);
+    {
+        let window = window.clone();
+        action_about.connect_activate(move |_, _| about::present(&window));
+    }
+    window.add_action(&action_about);
+}
 
 fn apply_update(w: &Widgets, update: UiUpdate) {
     match update {
@@ -351,7 +357,6 @@ fn apply_update(w: &Widgets, update: UiUpdate) {
         UiUpdate::Capabilities(caps) => apply_capabilities(w, &caps),
         UiUpdate::Cameras { cameras, active } => apply_cameras(w, &cameras, &active),
         UiUpdate::Disconnected => apply_status_banner(w, "disconnected"),
-        // Intercepted by the state-sync loop before reaching here.
         UiUpdate::DaemonQuit => {}
     }
 }
@@ -547,7 +552,6 @@ fn extract_effect_params(state: &VariantMap, id: &str) -> VariantMap {
 }
 
 fn apply_bypass(w: &Widgets, on: bool) {
-    // Transient bypass from "Hold to compare": leave the controls alone.
     if w.comparing.get() {
         return;
     }

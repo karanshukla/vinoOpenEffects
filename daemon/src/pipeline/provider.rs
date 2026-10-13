@@ -75,15 +75,11 @@ fn run_inner(
     let context = pw::context::ContextRc::new(&mainloop, None)?;
     let core = context.connect_rc(None)?;
 
-    // Quit the loop when the worker drops/asks the node to stop.
     let _quit = quit_rx.attach(mainloop.loop_(), {
         let mainloop = mainloop.clone();
         move |_| mainloop.quit()
     });
 
-    // Frame ticks come from a thread that sleeps until a consumer is streaming,
-    // so a paused node costs no wakeups. It hands each tick to this loop, since
-    // the stream can only be driven from its own thread.
     let (tick_tx, tick_rx) = pw::channel::channel::<()>();
     let (tick_gate, gate_rx) = std::sync::mpsc::channel::<bool>();
     spawn_tick_thread(
@@ -109,8 +105,7 @@ fn run_inner(
             *pw::keys::MEDIA_TYPE => "Video",
             *pw::keys::MEDIA_CATEGORY => "Source",
             *pw::keys::MEDIA_ROLE => "Camera",
-            // media.class=Video/Source is what makes WirePlumber surface this as
-            // a *camera* that consumers can pick, rather than a generic stream.
+            // WirePlumber only offers `Video/Source` nodes to consumers as cameras.
             *pw::keys::MEDIA_CLASS => "Video/Source",
             *pw::keys::NODE_NAME => PIPEWIRE_NODE_NAME,
             *pw::keys::NODE_DESCRIPTION => "vinoOpenEffects Virtual Camera",
@@ -125,11 +120,9 @@ fn run_inner(
             match new {
                 StreamState::Streaming => {
                     let _ = ud.tick_gate.send(true);
-                    // A consumer linked and the graph is cycling -> camera on.
                     let _ = ud.capture_tx.send(WorkerMsg::Capture(CaptureCmd::Start));
                 }
                 StreamState::Paused => {
-                    // First PAUSED = the node is registered and advertised.
                     if !ud.announced {
                         ud.announced = true;
                         let _ = ud
@@ -139,7 +132,6 @@ fn run_inner(
                                 found: true,
                             });
                     }
-                    // No consumer pulling (resting state) -> release the camera.
                     let _ = ud.tick_gate.send(false);
                     let _ = ud.capture_tx.send(WorkerMsg::Capture(CaptureCmd::Stop));
                 }
@@ -151,15 +143,6 @@ fn run_inner(
             }
         })
         .param_changed(|stream, ud, id, param| {
-            // When the format is fixated, answer with our buffer requirements so
-            // the consumer/server allocates buffers big enough for one I420 frame.
-            //
-            // The Meta(Header) param is not optional: WebRTC consumers (Chromium,
-            // Firefox) request SPA_META_Header and then dereference it without a
-            // null check (video_capture_pipewire.cc, `h->flags`). The meta region
-            // is only allocated when *both* ports announce it, so omitting it
-            // here segfaults the browser's video-capture process on the first
-            // delivered frame.
             if param.is_none() || id != pw::spa::param::ParamType::Format.as_raw() {
                 return;
             }
@@ -190,8 +173,6 @@ fn run_inner(
                     match ud.bridge.copy_latest(slice) {
                         Some(n) => n,
                         None => {
-                            // No processed frame yet -> emit black so a freshly
-                            // connected consumer sees a valid signal immediately.
                             let n = ud.fmt.frame_size().min(slice.len());
                             fill_black_i420(&mut slice[..n], ud.fmt);
                             n
@@ -207,14 +188,12 @@ fn run_inner(
                 *chunk.size_mut() = written as u32;
             }
 
-            // Stamp the header meta consumers negotiated (see param_changed).
-            // pipewire-rs only exposes metas read-only, but the meta region
-            // lives in the buffer's shared memory which the producer owns
-            // during this cycle, so writing through the pointer is sound.
             if let Some(header) = buffer.find_meta::<spa::buffer::meta::MetaHeader>() {
                 let frame_duration_ns = 1_000_000_000u64 / ud.fmt.fps as u64;
                 let h = header as *const spa::buffer::meta::MetaHeader
                     as *mut pw::spa::sys::spa_meta_header;
+                // SAFETY: the producer owns the buffer's shared meta region for this cycle;
+                // pipewire-rs just exposes it read-only.
                 unsafe {
                     (*h).flags = 0;
                     (*h).offset = 0;
@@ -233,20 +212,8 @@ fn run_inner(
     };
     let mut params = [format_pod];
 
-    // OUTPUT direction = we implement a Source. No AUTOCONNECT: consumers come to
-    // us via WirePlumber, we don't link ourselves to anything. DRIVER: a virtual
-    // camera has no hardware clock, and camera consumers expect the *source* to
-    // drive the graph — so we clock our own output cadence (see the timer below).
-    // Without this the graph never cycles, process() never fires, and consumers
-    // see a black "no active stream".
-    //
-    // RT_PROCESS is required, not an optimisation: without it the stream
-    // processes on the main loop and PipeWire (>= 1.2) schedules the node
-    // *asynchronously* (`node.async = true`). An async driver flips connecting
-    // consumers to async scheduling too, which crashes Chromium's video-capture
-    // service in a connect/crash/retry loop and leaves browsers on a black
-    // frame. Synchronous data-loop processing keeps consumers on the normal
-    // sync path, like a real v4l2 camera node.
+    // Camera consumers never cycle a graph whose source isn't DRIVER, and without RT_PROCESS
+    // PipeWire >= 1.2 schedules the driver async, which crash-loops Chromium's capture service.
     stream.connect(
         spa::utils::Direction::Output,
         None,
@@ -256,9 +223,6 @@ fn run_inner(
         &mut params,
     )?;
 
-    // Drive output at the target framerate: each tick, if we are the active
-    // driver (a consumer is streaming), trigger a graph cycle so process() runs
-    // and serves the latest frame.
     let _tick = tick_rx.attach(mainloop.loop_(), {
         let stream = stream.clone();
         move |()| {
@@ -294,7 +258,6 @@ fn spawn_tick_thread(
                 }
                 continue;
             }
-            // Absolute deadlines, so a late wakeup doesn't drift the frame rate.
             let mut next = std::time::Instant::now() + interval;
             while open {
                 match gate.recv_timeout(next.saturating_duration_since(std::time::Instant::now())) {

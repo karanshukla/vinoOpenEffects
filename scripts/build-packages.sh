@@ -17,10 +17,8 @@ cd "$repo_root"
 dist="$repo_root/dist"
 bindir="/usr/bin"
 
-# nfpm arch label (deb/Arch use amd64/x86_64 conventions; nfpm normalizes).
 ARCH="${ARCH:-amd64}"
 
-# Single source of truth: workspace package version in the root Cargo.toml.
 VERSION="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
 if [ -z "$VERSION" ]; then
     echo "error: could not read version from Cargo.toml" >&2
@@ -58,8 +56,6 @@ echo "==> Staging onnxruntime into dist/ort (sha256-verified, CPU)"
 echo "==> Staging models into dist/models (sha256-verified)"
 VINOOPENEFFECTS_MODELS_DEST="$dist/models" ./scripts/fetch-models.sh
 
-# Three independent packages: the daemon, plus the CLI and GUI clients that
-# both depend on it. Pack each config for each requested format.
 configs=(daemon cli gui)
 for cfg in "${configs[@]}"; do
     for fmt in "${formats[@]}"; do

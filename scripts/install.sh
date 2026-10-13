@@ -84,8 +84,7 @@ if [ "$models" = 1 ]; then
 fi
 
 echo "==> Refreshing caches"
-# The bus only reads new activation files on reload; without this the first
-# D-Bus call fails with "name not activatable" until the next login.
+# The bus reads new activation files only on reload; otherwise calls fail "name not activatable" until next login.
 if command -v busctl >/dev/null 2>&1; then
     busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
         org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true

@@ -64,8 +64,6 @@ pub struct InferenceConfig {
     pub provider: InferenceProvider,
 }
 
-// effects
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EffectsConfig {
     #[serde(default)]
@@ -155,8 +153,6 @@ impl Default for StudioLightState {
     fn default() -> Self {
         Self {
             enabled: false,
-            // Visible out of the box: at the default intensity this lifts the
-            // subject by ~15% rather than being an identity transform.
             intensity: 50,
             brightness: 30,
             contrast: 50,
@@ -166,8 +162,6 @@ impl Default for StudioLightState {
         }
     }
 }
-
-// camera
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CameraConfig {
@@ -191,8 +185,6 @@ fn phase1_default_crop() -> CropConfig {
         right: 12,
     }
 }
-
-// io helpers
 
 impl AppState {
     pub fn config_path() -> Result<PathBuf, ConfigError> {
@@ -238,8 +230,6 @@ impl AppState {
         Ok(())
     }
 }
-
-// tests
 
 #[cfg(test)]
 mod tests {
@@ -328,7 +318,6 @@ selected = ""
         let text = toml::to_string_pretty(&on).unwrap();
         let reparsed: AppState = toml::from_str(&text).unwrap();
         assert!(reparsed.bypass);
-        // Per-effect state is preserved alongside bypass.
         assert!(reparsed.effects.portrait_blur.enabled);
     }
 
@@ -342,7 +331,6 @@ strength = 90
         let state: AppState = toml::from_str(partial).expect("parse failed");
         assert!(state.effects.portrait_blur.enabled);
         assert_eq!(state.effects.portrait_blur.strength, 90);
-        // Unspecified fields should get serde defaults
         assert!(!state.effects.reactions.enabled);
         assert_eq!(state.effects.center_stage.zoom, "normal");
     }

@@ -58,8 +58,6 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     install_swatch_css();
     let applying = Rc::new(Cell::new(false));
 
-    // Mode toggle (blur / replace) and, for Blur, a strength row. Built
-    // before the card so the switch closure can capture the toggle.
     let (mode_row, mode) = {
         let cmd_tx = cmd_tx.clone();
         let applying = applying.clone();
@@ -112,11 +110,8 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     card.add_row(&mode_row);
     card.add_row(&blur_row);
 
-    // Image presets and color swatches share one radio group, so picking
-    // either kind of background visually deselects the other.
     let mut group_leader: Option<gtk::ToggleButton> = None;
 
-    // replace: image presets
     let image_box = wrapping_grid(5);
 
     let mut image_presets = Vec::new();
@@ -141,8 +136,6 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         image_presets.push((label, path, button));
     }
 
-    // "Add your own" button (not part of the radio group): always opens a
-    // file picker.
     let browse = gtk::Button::builder()
         .tooltip_text("Choose Image…")
         .css_classes(["oe-swatch-btn", "flat"])
@@ -165,7 +158,6 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         .build();
     card.add_row(&image_row);
 
-    // replace: color swatches
     let swatch_box = wrapping_grid(7);
 
     let mut swatches = Vec::new();
@@ -190,7 +182,6 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         swatches.push(button);
     }
 
-    // Custom-color button (not part of the radio group): always opens a picker.
     let custom_provider = gtk::CssProvider::new();
     add_provider(&custom_provider);
     let custom = gtk::Button::builder()
@@ -435,8 +426,6 @@ fn rgba_to_hex(rgba: &RGBA) -> String {
         to_u8(rgba.blue())
     )
 }
-
-// swatch widgets & CSS
 
 /// A grid that wraps its swatches/thumbnails onto extra rows when the column
 /// is narrow, instead of forcing a minimum window width like a plain `Box`.

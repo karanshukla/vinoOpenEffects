@@ -69,8 +69,8 @@ impl SelfieSeg {
         let (_shape, data) = outputs[Self::OUTPUT].try_extract_tensor::<f32>()?;
         let mut values = vec![0f32; area];
         for (dst, &v) in values.iter_mut().zip(data.iter()) {
-            // MediaPipe selfie-seg already applies the final sigmoid, so values
-            // are in 0..1; clamp defensively in case a re-export emits logits.
+            // The shipped model emits probabilities; out-of-range values mean a re-export emitting
+            // logits.
             *dst = if !(0.0..=1.0).contains(&v) {
                 1.0 / (1.0 + (-v).exp())
             } else {
@@ -255,15 +255,15 @@ impl YuNet {
         let s = self.size;
         let plane = s * s;
         let mut input = vec![0f32; 3 * plane];
-        // BGR channel order to match the model's training (OpenCV blobFromImage).
+        // YuNet was trained on OpenCV BGR blobs.
         for y in 0..s {
             let sy = (y * h / s).min(h - 1);
             for x in 0..s {
                 let sx = (x * w / s).min(w - 1);
                 let p = sy * stride + sx * 4;
-                input[y * s + x] = rgba[p + 2] as f32; // B
-                input[plane + y * s + x] = rgba[p + 1] as f32; // G
-                input[2 * plane + y * s + x] = rgba[p] as f32; // R
+                input[y * s + x] = rgba[p + 2] as f32;
+                input[plane + y * s + x] = rgba[p + 1] as f32;
+                input[2 * plane + y * s + x] = rgba[p] as f32;
             }
         }
         let tensor = Tensor::from_array(([1i64, 3, s as i64, s as i64], input))?;
@@ -280,7 +280,6 @@ impl YuNet {
             let bbox = outputs[format!("bbox_{stride_px}").as_str()]
                 .try_extract_tensor::<f32>()?
                 .1;
-            // Landmarks are optional: fall back to bbox framing if absent.
             let kps = outputs
                 .get(format!("kps_{stride_px}").as_str())
                 .and_then(|v| v.try_extract_tensor::<f32>().ok())
@@ -301,8 +300,8 @@ impl YuNet {
                     let cy = (row as f32 + b[1]) * stride_px as f32 / s as f32;
                     let fw = b[2].exp() * stride_px as f32 / s as f32;
                     let fh = b[3].exp() * stride_px as f32 / s as f32;
-                    // YuNet kps layout: [r_eye, l_eye, nose, r_mouth, l_mouth],
-                    // each (x,y), decoded like the bbox center off the anchor.
+                    // YuNet kps are anchor-relative (x, y) pairs for [r_eye, l_eye, nose, r_mouth,
+                    // l_mouth].
                     let (eye_cx, eye_cy, eye_dist) = kps
                         .map(|k| {
                             let kp = |i: usize| {
@@ -433,7 +432,6 @@ mod tests {
         assert_eq!(mask.size, 256);
         assert_eq!(mask.values.len(), 256 * 256);
         assert!(mask.values.iter().all(|v| (0.0..=1.0).contains(v)));
-        // A center-sampled probability should be a finite number.
         assert!(mask.sample(0.5, 0.5).is_finite());
     }
 
@@ -450,8 +448,6 @@ mod tests {
         let (w, h) = (64usize, 48usize);
         let frame = synthetic_frame(w, h);
         let mut model = YuNet::load().expect("load yunet");
-        // The synthetic blob isn't a face, so we only assert the decode path
-        // runs and returns well-formed (possibly empty) detections.
         let faces = model.detect(&frame, w, h, w * 4, 0.6).expect("detect");
         for f in &faces {
             assert!(f.score >= 0.6 && f.score <= 1.0);
@@ -461,9 +457,8 @@ mod tests {
     /// Needs an NPU and the exported model; skips with a message otherwise.
     #[test]
     fn auto_light_gain_is_bounded_when_available() {
-        // NPU first: the model is experimental (scripts/export-iat.py, not
-        // fetch-models.sh), and the models workflow fails on "model not
-        // installed", so a runner without an NPU must skip on that instead.
+        // The models workflow fails on "model not installed", so NPU-less runners must skip on this
+        // check first.
         if !super::super::npu_present() {
             eprintln!("skipping: no NPU hardware present");
             return;
