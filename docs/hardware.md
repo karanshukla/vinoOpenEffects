@@ -20,10 +20,12 @@ honoured is an error, never a quiet CPU run. Set the provider with
 while streaming) or `VINOOPENEFFECTS_EP` in the daemon's environment, which wins.
 [architecture.md](architecture.md#inference) has the mechanics.
 
-The NPU needs the OpenVINO build of onnxruntime. `scripts/install.sh` installs it
-with `ovfetch` when it detects an NPU or GPU, and the CPU build otherwise; to
-switch an existing install, run
-`ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort`.
+onnxruntime always comes from [ovfetch](https://github.com/karanshukla/ovfetch),
+which `scripts/install.sh` runs: the OpenVINO build matched to the NPU and its
+driver, or the newest one without an NPU. It carries the CPU provider too, so
+there is no separate CPU runtime. To change an existing install, run
+`ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort` (`--build` for an
+OpenVINO newer than Intel's prebuilt wheels).
 `vinoopeneffects-ctl doctor` reports which runtime loaded and whether it has the
 OpenVINO provider.
 

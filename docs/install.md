@@ -13,6 +13,9 @@ is easier from a checkout, and packaging will come back later.
 - For the GUI: libadwaita 1.7 or newer, and `gtk4paintablesink` for the live
   preview (`gstreamer1-plugin-gtk4` on Fedora, `gstreamer1.0-gtk4` on
   Debian/Ubuntu, `gst-plugin-gtk4` on Arch). Use `--no-gui` without them.
+- [ovfetch](https://github.com/karanshukla/ovfetch) 0.4.0 or newer
+  (`cargo install ovfetch --locked`), on every machine: it is the only source of
+  onnxruntime
 - x86_64 has been tested; nothing else has
 
 ## Installing
@@ -20,7 +23,8 @@ is easier from a checkout, and packaging will come back later.
 ```bash
 scripts/install.sh                          # into ~/.local, no root
 scripts/install.sh --no-gui                 # daemon and CLI only
-scripts/install.sh --no-models              # skip the model download (reinstalls)
+scripts/install.sh --no-models              # don't touch models at all
+scripts/install.sh --build-runtime          # let ovfetch compile a newer OpenVINO build
 sudo scripts/install.sh --prefix /usr/local # system-wide
 ```
 
@@ -32,8 +36,21 @@ It builds a release and installs:
 | D-Bus interfaces and activation file | `share/dbus-1/interfaces/`, `share/dbus-1/services/` |
 | systemd user unit | `share/systemd/user/vinoopeneffects-daemon.service` |
 | Desktop entry and icons (GUI) | `share/applications/`, `share/icons/hicolor/` |
-| onnxruntime | `lib/vinoopeneffects/ort/`: the OpenVINO build via `ovfetch` when it detects an NPU or GPU, the sha256-verified CPU build otherwise |
-| Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests |
+| onnxruntime | `lib/vinoopeneffects/ort/`, installed by `ovfetch` (see below) |
+| Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests; ones already present and verified are skipped |
+
+**ovfetch decides the runtime.** `install.sh` stops before building if ovfetch
+is missing or older than 0.4.0, then runs `ovfetch install` before installing
+anything else. ovfetch picks the OpenVINO build of onnxruntime that fits the
+machine's NPU and driver, or the newest one on a machine without an NPU; that
+build also carries the CPU provider, so the same runtime serves CPU inference.
+
+If ovfetch doesn't install (for example, the prefix holds a newer build it won't
+downgrade, such as one compiled with `ovfetch install --build`, or the download
+fails) but the prefix passes `ovfetch verify`, the install continues with that
+runtime and a warning. With nothing verified to keep, it stops with ovfetch's
+reason. `--build-runtime` passes `--build`, so ovfetch resolves the compiled
+build itself (an unchanged one is not recompiled).
 
 Then it asks the session bus to reload, so the daemon is D-Bus-activatable
 straight away, and warns if `bin/` isn't on `PATH`. It does not restart a daemon

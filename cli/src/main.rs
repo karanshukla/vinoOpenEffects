@@ -15,7 +15,7 @@ use zvariant::{OwnedValue, Str, Value};
         Effects have friendly subcommands (center-stage, portrait-blur, background,\n\
         studio-light, reactions). Run one with no flags to print its current state,\n\
         or pass flags to change settings. `set` is a low-level escape hatch.",
-    version
+    version = env!("VINOOPENEFFECTS_VERSION")
 )]
 struct Cli {
     #[command(subcommand)]

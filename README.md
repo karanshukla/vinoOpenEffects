@@ -31,8 +31,9 @@ From source, into `~/.local` with no root (requirements are in
 scripts/install.sh            # add --no-gui for the daemon and CLI only
 ```
 
-It fetches the sha256-verified models and an onnxruntime, using the OpenVINO
-build when it finds an NPU. Then open **vinoOpenEffects** from your app menu, or:
+It fetches the sha256-verified models and has
+[ovfetch](https://github.com/karanshukla/ovfetch) install the onnxruntime that
+fits your NPU (or CPU). Then open **vinoOpenEffects** from your app menu, or:
 
 ```bash
 vinoopeneffects-ctl start                          # advertise the virtual camera

@@ -25,12 +25,11 @@ That is enough to build and to run `cargo test --workspace`. Two more things
 are needed to run the models, and the tests that use them skip without them:
 
 - **onnxruntime.** The default `npu` build loads `libonnxruntime.so` at runtime,
-  for CPU inference as well as NPU. `scripts/fetch-ort.sh DIR` downloads the
-  sha256-verified CPU build; point `ORT_DYLIB_PATH` at it or put it in
-  `~/.local/lib/vinoopeneffects/ort`. For the NPU, use
-  `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort` instead.
-  `cargo build --no-default-features` links a CPU-only runtime statically and
-  needs neither.
+  for CPU inference as well as NPU. It comes from ovfetch only:
+  `cargo install ovfetch --locked`, then
+  `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort` (or point
+  `ORT_DYLIB_PATH` at another ovfetch prefix). `cargo build --no-default-features`
+  links a CPU-only runtime statically and needs neither.
 - **Models.** `scripts/fetch-models.sh` downloads the four bundled models into
   `~/.local/share/vinoopeneffects/models`, checking each against its manifest's
   sha256. It is idempotent.
@@ -46,7 +45,7 @@ models and an onnxruntime), so a checkout can be the install. It doesn't restart
 anything that's already running:
 
 ```bash
-scripts/install.sh --no-models           # rebuild and reinstall; models are already there
+scripts/install.sh                       # rebuild and reinstall; verified models and runtime are kept
 systemctl --user restart vinoopeneffects-daemon
 ```
 
@@ -125,7 +124,10 @@ scripts/release.sh                                         # from an up-to-date 
 section. A release is only a tag and a changelog entry: there is no release
 workflow and no packages yet, since vinoOpenEffects installs from source
 ([install.md](install.md)). The crate version in `Cargo.toml` is not the
-release number and doesn't change with it.
+release number and doesn't change with it. The version the GUI's About dialog
+and `vinoopeneffects-ctl --version` show comes from `buildinfo/version.rs` at
+build time: `VINOOPENEFFECTS_VERSION` if set, else the checkout's exact `vN`
+tag, else `dev`.
 
 ### Changelog
 

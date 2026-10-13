@@ -8,22 +8,24 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
     let about = adw::AboutDialog::builder()
         .application_name("vinoOpenEffects")
         .application_icon(APP_ID)
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(env!("VINOOPENEFFECTS_VERSION"))
         .comments("Linux-native webcam effects engine")
-        .developer_name("Aryan Kushwaha")
-        .developers(["Aryan Kushwaha <hello@funinkina.co.in>"])
-        .copyright("© 2026 Aryan Kushwaha")
+        .developer_name("Karan Shukla")
+        .developers(["Karan Shukla https://github.com/karanshukla"])
+        .copyright("© 2026 Karan Shukla\nBased on openeffects © Aryan Kushwaha and contributors")
         .license_type(gtk::License::Gpl30)
         .website("https://github.com/karanshukla/vinoOpenEffects")
         .issue_url("https://github.com/karanshukla/vinoOpenEffects/issues")
         .build();
 
-    about.add_link("GitHub", "https://github.com/funinkina");
-    about.add_link(
-        "Report an Issue",
-        "https://github.com/karanshukla/vinoOpenEffects/issues",
+    about.add_credit_section(
+        Some("Original author of openeffects"),
+        &["Aryan Kushwaha https://github.com/funinkina"],
     );
-    about.add_link("Portfolio and Blogs", "https://funinkina.co.in");
+    about.add_link(
+        "openeffects (upstream)",
+        "https://github.com/funinkina/openeffects",
+    );
 
     about.present(Some(parent));
 }

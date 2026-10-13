@@ -3,7 +3,13 @@ use std::{env, error::Error, fs, path::PathBuf};
 use zbus::{names::BusName, zvariant::ObjectPath};
 use zbus_xml::Node;
 
+include!("../buildinfo/version.rs");
+
 fn main() -> Result<(), Box<dyn Error>> {
+    println!(
+        "cargo:rustc-env=VINOOPENEFFECTS_VERSION={}",
+        release_version()
+    );
     generate_proxies()
 }
 
