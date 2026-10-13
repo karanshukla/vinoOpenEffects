@@ -1,8 +1,7 @@
-pub mod bench;
 pub mod engine;
-pub mod gesture;
 pub mod hand;
 pub mod manifest;
+pub mod models;
 pub mod registry;
 
 const INTRA_THREADS: usize = 2;

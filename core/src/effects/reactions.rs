@@ -7,9 +7,9 @@
 //! D-Bus method) or, when the reactions effect is enabled, automatically by the
 //! hand-gesture pipeline (Phase B).
 //!
-//! The system is owned by `oe_effects`' per-instance `State`, advanced and
-//! composited once per frame from `transform_frame_ip` after every other effect
-//! so the emojis always sit on top of the final image. Animation timing is in
+//! The system is owned by [`Effects`](super::Effects), advanced and composited
+//! once per frame from `Effects::process` after every other effect so the
+//! emojis always sit on top of the final image. Animation timing is in
 //! frames (the camera runs at ~`FPS` = 30); no PTS plumbing is needed.
 
 use shared::dbus::REACTION_IDS;
@@ -19,16 +19,16 @@ use tracing::warn;
 /// [`REACTION_IDS`]: heart, thumbs_up, thumbs_down, tada, clap, wave, joy,
 /// open_mouth, cry, thinking.
 static EMOJI_PNG: [&[u8]; REACTION_IDS.len()] = [
-    include_bytes!("../../../assets/emoji/emoji_u1f496.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f44d.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f44e.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f389.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f44f.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f44b.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f602.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f62e.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f622.png"),
-    include_bytes!("../../../assets/emoji/emoji_u1f914.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f496.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f44d.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f44e.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f389.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f44f.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f44b.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f602.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f62e.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f622.png"),
+    include_bytes!("../../assets/emoji/emoji_u1f914.png"),
 ];
 
 /// Particles spawned per burst.
@@ -236,7 +236,7 @@ fn particle_alpha(p: &Particle, age: f32) -> f32 {
 /// Composite one (rotated, scaled) emoji sprite onto the frame with straight
 /// alpha. For each destination pixel in the particle's bounding box, the screen
 /// offset is inverse-rotated into sprite space and bilinearly sampled — the same
-/// inverse-mapping trick `oe_effects` uses for crop resampling.
+/// inverse-mapping trick center stage uses for crop resampling.
 fn render_particle(img: &mut [u8], w: usize, h: usize, sprite: &Sprite, p: &Particle, frame: u64) {
     let age = (frame - p.spawn_frame) as f32;
     let alpha = particle_alpha(p, age);
