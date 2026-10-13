@@ -8,32 +8,22 @@ use crate::inference::models::Face;
 
 /// Minimum YuNet score to accept a face for framing.
 const FACE_SCORE_THRESH: f32 = 0.6;
-/// Run YuNet face detection every Nth frame. The comfort zone below absorbs
-/// detection jitter, so framing tolerates a slower (cheaper) detect cadence.
+/// Run YuNet every Nth frame; the comfort zone absorbs the staleness.
 const FACE_INTERVAL: u64 = 4;
-/// EMA smoothing factor for the center-stage crop (≈12 frames to 90%).
+/// EMA weight for the crop (about 12 frames to 90%).
 const CS_ALPHA: f32 = 0.18;
-/// Tightest allowed crop (fraction of each axis); caps zoom at 4× so a
-/// small/distant face doesn't blow up into an unusably pixelated frame.
+/// Tightest crop as a fraction of each axis, capping zoom at 4×.
 const CS_MIN_CROP: f32 = 0.25;
-/// Comfort zone (macOS-Center-Stage-style lock): while the subject's ideal
-/// crop center stays within this fraction of the *committed crop's span*
-/// from the committed center, the framing is locked — rotating, tilting,
-/// grinning, leaning, small back-and-forth never move the crop.
+/// Framing stays locked while the subject drifts less than this fraction of the crop span; see docs/architecture.md#center-stage.
 const CS_COMFORT_POS: f32 = 0.20;
-/// Zoom side of the comfort zone: locked while `ideal zf / committed zf`
-/// stays within this ratio band (expression/pose noise lands well inside).
+/// Framing stays locked while the ideal/committed zoom ratio is inside this band.
 const CS_COMFORT_ZOOM_LO: f32 = 0.78;
 const CS_COMFORT_ZOOM_HI: f32 = 1.30;
-/// A breach this large (fraction of committed span / zoom ratio) is
-/// "drastic": the subject stood up, walked across, or the face count
-/// changed (which jolts the union box). Confirmed on the fast path.
+/// A drift past this fraction of the span (or zoom outside the band below) reframes on the fast path.
 const CS_BREACH_POS: f32 = 0.45;
 const CS_BREACH_ZOOM_LO: f32 = 0.55;
 const CS_BREACH_ZOOM_HI: f32 = 1.85;
-/// Consecutive out-of-comfort frames required before reframing: ≈1 s for a
-/// moderate drift (lean that stays), ≈0.3 s for a drastic one. A move that
-/// returns to the comfort zone before confirming never reframes at all.
+/// Consecutive out-of-comfort frames before reframing: about 1 s, or 0.3 s for a breach.
 const CS_CONFIRM: u32 = 30;
 const CS_FAST_CONFIRM: u32 = 9;
 const EYES_ABOVE_FACE_CENTER: f32 = 0.25;

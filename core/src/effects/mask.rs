@@ -7,29 +7,15 @@ use crate::gesture::tracking::HandTracker;
 use crate::inference::engine::Engine;
 use crate::inference::models::Mask;
 
-/// Run selfie segmentation every Nth frame; the mask is reused in between.
-/// 2 (≈15 Hz at 30 fps) keeps the ONNX call — the per-frame energy cost —
-/// off every other frame. The 1-frame hold is hidden by the temporal EMA
-/// (model space) and the guided-filter edge re-snap (which re-aligns the
-/// mask boundary to the *current* frame's luma every frame, see
-/// `refine`).
+/// Segment every Nth frame and reuse the mask in between; see docs/architecture.md#the-person-mask.
 const SEG_INTERVAL: u64 = 2;
-/// Temporal EMA factor for the raw 256² model output: `e = α·new + (1-α)·e`.
-/// Runs once per fresh segmentation (~15 Hz), killing boundary flicker
-/// without smearing the image-aligned edge (which lives downstream). Lower
-/// = steadier but laggier.
+/// Temporal EMA weight of each fresh segmentation; lower is steadier but laggier.
 const SEG_EMA_ALPHA: f32 = 0.5;
-/// Guided-filter subsample factor: coefficients are computed at 1/s² the
-/// pixels, then applied against full-res luma (which carries the sharp edge).
+/// Guided-filter coefficients are computed at 1/s² of the pixels.
 const GF_SUBSAMPLE: usize = 4;
-/// Guided-filter regularization. Lower = snappier to image edges (and
-/// noisier). Kept small so the matte hugs real luma boundaries.
+/// Guided-filter regularization; lower snaps harder to luma edges and is noisier.
 const GF_EPS: f32 = 1e-4;
-/// Half-width of the final alpha transition band, in mask units (0..1).
-/// After the guided filter localizes the edge onto the real outline, the
-/// alpha is steepened with a smoothstep across `0.5 ± GF_EDGE_WIDTH`, so the
-/// subject/background boundary is a thin (~1px) anti-aliased line instead of
-/// a soft halo. Smaller = sharper/harder; larger = softer.
+/// Half-width of the smoothstep alpha band around 0.5; smaller is a harder edge.
 const GF_EDGE_WIDTH: f32 = 0.06;
 const GF_RADIUS_DIVISOR: usize = 96;
 

@@ -1,0 +1,81 @@
+# Hardware
+
+What runs where, and what the numbers were on the one machine they were
+measured on. Every number here carries its date and machine; treat it as a
+snapshot, not a promise.
+
+## NPU, GPU and CPU
+
+| Provider | How it is selected | What happens |
+|---|---|---|
+| **NPU** (Intel, OpenVINO EP) | `auto` when `/dev/accel/accel*` exists and the loaded onnxruntime has the OpenVINO provider; or `npu` explicitly | Every model runs on it, and Auto light only runs here |
+| **GPU** (OpenVINO EP) | `VINOOPENEFFECTS_EP=gpu` only; `auto` never picks it, and the saved setting takes `auto`, `cpu` or `npu` | Same models as the NPU path. Not measured yet |
+| **CPU** | `auto` without a usable NPU, or `cpu` explicitly | Every model except Auto light, which stays off |
+
+`auto` falls back to CPU with a log line when there is no NPU, the runtime has
+no OpenVINO provider, or a model fails to compile for the NPU, and remembers the
+failure so later loads skip the NPU. An explicit `npu` or `gpu` that can't be
+honoured is an error, never a quiet CPU run. Set the provider with
+`vinoopeneffects-ctl inference auto|cpu|npu` (saved to `state.toml`, swappable
+while streaming) or `VINOOPENEFFECTS_EP` in the daemon's environment, which wins.
+[architecture.md](architecture.md#inference) has the mechanics.
+
+The NPU needs the OpenVINO build of onnxruntime. `scripts/install.sh` installs it
+with `ovfetch` when it detects an NPU or GPU, and the CPU build otherwise; to
+switch an existing install, run
+`ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort`.
+`vinoopeneffects-ctl doctor` reports which runtime loaded and whether it has the
+OpenVINO provider.
+
+## Measured inference latency
+
+Measured 2026-10-11 on a Dell XPS 13 (Wildcat Lake NPU, NPU driver 1.35.0,
+OpenVINO 2025.4.1). Mean ms per call over 100 iterations after warmup, on a
+synthetic 1280×720 frame with no face or hand in it. Includes the RGBA resample
+and output decode, not just `session.run`. Inference only: the camera,
+GStreamer and PipeWire are not in it.
+
+| Model | CPU | NPU | NPU load (first run) |
+|---|---|---|---|
+| Selfie segmentation | 3.4 | 1.4 | 35 ms |
+| YuNet | 8.1 | 4.9 | 4 ms |
+| Palm detection | 4.9 | 2.1 | 533 ms |
+| Hand landmarks | 2.6 | 1.2 | 426 ms |
+
+The NPU run was confirmed on hardware through `npu_busy_time_us`. On a later run
+palm and hand loaded in 37 ms and 68 ms, so the first-run compile is not paid
+every launch.
+
+Auto light's IAT model, measured 2026-10-12 on the same machine: about 10 ms per
+256² frame on the NPU and about 850 ms on CPU, which is why it never runs on CPU.
+
+### Reproducing
+
+```bash
+VINOOPENEFFECTS_EP=cpu vinoopeneffects-daemon --bench-inference [ITERS] [FRAME.png]
+VINOOPENEFFECTS_EP=npu vinoopeneffects-daemon --bench-inference [ITERS] [FRAME.png]
+scripts/bench-video.sh [CLIP] [SECONDS]   # whole pipeline on a real clip: latency, CPU time, power
+```
+
+`bench-video.sh` needs the `npu` build, an OpenVINO onnxruntime and installed
+models; it reads battery power, so run it unplugged, and package energy (RAPL)
+needs root.
+
+## Cameras
+
+- **The virtual camera matches the real camera's native mode.** The capture
+  pipeline pins the camera to its preferred mode in raw or MJPEG, so a UVC
+  webcam that only does 720p in MJPEG still counts as native 720p.
+- **USB bandwidth caps raw modes.** Observed 2026-10-13 on the Dell XPS 13
+  integrated webcam: raw YUYV at 1080p is capped at 5 fps over USB. An app that
+  opens the real camera in that mode lags; pick the vinoOpenEffects Virtual
+  Camera instead.
+- **Dynamic frame rate.** Some UVC cameras let auto-exposure lower the frame
+  rate in dim light when `exposure_dynamic_framerate` is on, and another app can
+  leave it on. The daemon turns it off whenever it opens the camera. For other
+  apps that open the camera directly:
+  `v4l2-ctl -d /dev/video0 -c exposure_dynamic_framerate=0` (not persistent
+  across replug or reboot).
+- **IR sensors.** Laptops with Windows Hello cameras expose an IR node next to
+  the RGB one. `doctor` classifies each node (`RGB`, `IR`, `meta`) and warns if
+  the selected camera is IR.
