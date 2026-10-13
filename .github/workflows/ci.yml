@@ -91,6 +91,29 @@ jobs:
           done
       - run: cargo test -p vinoopeneffects-core
 
+  # Line coverage of the workspace tests, reported in the job summary.
+  coverage:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal --component llvm-tools-preview
+      - *apt
+      - *cache
+      # rust-cache keeps ~/.cargo/bin, so this is a no-op once cached.
+      - run: cargo install cargo-llvm-cov --locked
+      - run: cargo llvm-cov --workspace --no-report
+      - name: Coverage summary
+        run: |
+          {
+            echo '## Coverage'
+            echo '```'
+            cargo llvm-cov report --summary-only
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build-npu:
     runs-on: ubuntu-26.04
     timeout-minutes: 30

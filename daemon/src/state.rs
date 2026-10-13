@@ -348,9 +348,16 @@ impl DaemonState {
 
 #[cfg(test)]
 mod tests {
-    use shared::dbus::{value_as_bool, value_as_string, value_as_u32};
+    use shared::dbus::{
+        EFFECT_IDS, bool_value, i32_value, str_value, u32_value, value_as_bool, value_as_i32,
+        value_as_string, value_as_u32,
+    };
 
     use super::{DaemonState, DaemonStatus};
+
+    fn default_state() -> DaemonState {
+        DaemonState::new(shared::config::AppState::default(), false)
+    }
 
     #[test]
     fn state_transition_guards_match_prd() {
@@ -441,5 +448,189 @@ mod tests {
             Some("cpu")
         );
         assert!(!caps.contains_key("inference_detail"));
+    }
+
+    #[test]
+    fn status_strings_are_stable() {
+        let all = [
+            (DaemonStatus::Stopped, "stopped"),
+            (DaemonStatus::Starting, "starting"),
+            (DaemonStatus::Running, "running"),
+            (DaemonStatus::Idle, "idle"),
+            (DaemonStatus::Error, "error"),
+        ];
+        for (status, s) in all {
+            assert_eq!(status.as_str(), s);
+        }
+        assert!(!DaemonStatus::Starting.can_start());
+        assert!(DaemonStatus::Starting.can_stop());
+        assert!(DaemonStatus::Error.can_stop());
+    }
+
+    #[test]
+    fn every_effect_has_params_and_toggles() {
+        let mut state = default_state();
+        for id in EFFECT_IDS {
+            assert!(state.set_enabled(id, true), "{id}");
+            let params = state.effect_params(id).expect(id);
+            assert_eq!(params.get("enabled").and_then(value_as_bool), Some(true));
+
+            assert!(state.set_enabled(id, false), "{id}");
+            let params = state.effect_params(id).expect(id);
+            assert_eq!(params.get("enabled").and_then(value_as_bool), Some(false));
+        }
+    }
+
+    #[test]
+    fn unknown_effects_are_rejected() {
+        let mut state = default_state();
+        assert!(!state.set_enabled("sparkles", true));
+        assert!(state.effect_params("sparkles").is_none());
+        assert!(!state.set_param("sparkles", "enabled", &bool_value(true)));
+        assert!(!state.set_param("portrait_blur", "radius", &u32_value(5)));
+    }
+
+    #[test]
+    fn every_reported_param_is_settable() {
+        // Whatever GetParams reports, SetParam must accept back (except the
+        // `enabled` flag, which goes through SetEnabled).
+        let mut state = default_state();
+        for id in EFFECT_IDS {
+            let params = state.effect_params(id).unwrap();
+            for (key, value) in params {
+                if key == "enabled" {
+                    continue;
+                }
+                assert!(state.set_param(id, &key, &value), "{id}.{key}");
+            }
+        }
+    }
+
+    #[test]
+    fn set_param_rejects_wrong_types() {
+        let mut state = default_state();
+        assert!(!state.set_param("center_stage", "zoom", &u32_value(1)));
+        assert!(!state.set_param("center_stage", "crop_top", &str_value("10")));
+        assert!(!state.set_param("center_stage", "crop_top", &i32_value(-1)));
+        assert!(!state.set_param("portrait_blur", "strength", &bool_value(true)));
+        assert!(!state.set_param("studio_light", "auto_light", &u32_value(1)));
+        assert!(!state.set_param("bg_replace", "background", &bool_value(false)));
+    }
+
+    #[test]
+    fn set_param_clamps_out_of_range_values() {
+        let mut state = default_state();
+        assert!(state.set_param("center_stage", "crop_right", &u32_value(9000)));
+        assert!(state.set_param("portrait_blur", "strength", &u32_value(250)));
+        assert!(state.set_param("studio_light", "intensity", &u32_value(101)));
+        assert!(state.set_param("studio_light", "contrast", &u32_value(u32::MAX)));
+        assert!(state.set_param("studio_light", "auto_strength", &u32_value(300)));
+        assert!(state.set_param("studio_light", "brightness", &i32_value(-500)));
+        assert!(state.set_param("studio_light", "bg_brightness", &i32_value(500)));
+
+        let cs = state.effect_params("center_stage").unwrap();
+        assert_eq!(cs.get("crop_right").and_then(value_as_u32), Some(512));
+
+        let pb = state.effect_params("portrait_blur").unwrap();
+        assert_eq!(pb.get("strength").and_then(value_as_u32), Some(100));
+
+        let sl = state.effect_params("studio_light").unwrap();
+        assert_eq!(sl.get("intensity").and_then(value_as_u32), Some(100));
+        assert_eq!(sl.get("contrast").and_then(value_as_u32), Some(100));
+        assert_eq!(sl.get("auto_strength").and_then(value_as_u32), Some(100));
+        assert_eq!(sl.get("brightness").and_then(value_as_i32), Some(-100));
+        assert_eq!(sl.get("bg_brightness").and_then(value_as_i32), Some(100));
+    }
+
+    #[test]
+    fn set_param_accepts_unsigned_for_signed_params() {
+        // The CLI's `set` sends small positive numbers as u32.
+        let mut state = default_state();
+        assert!(state.set_param("studio_light", "brightness", &u32_value(40)));
+        let sl = state.effect_params("studio_light").unwrap();
+        assert_eq!(sl.get("brightness").and_then(value_as_i32), Some(40));
+    }
+
+    #[test]
+    fn string_params_round_trip() {
+        let mut state = default_state();
+        assert!(state.set_param("center_stage", "zoom", &str_value("subtle")));
+        assert!(state.set_param("center_stage", "mode", &str_value("group")));
+        assert!(state.set_param("bg_replace", "background", &str_value("#00ff00")));
+
+        let cs = state.effect_params("center_stage").unwrap();
+        assert_eq!(
+            cs.get("zoom").and_then(value_as_string).as_deref(),
+            Some("subtle")
+        );
+        assert_eq!(
+            cs.get("mode").and_then(value_as_string).as_deref(),
+            Some("group")
+        );
+        let bg = state.effect_params("bg_replace").unwrap();
+        assert_eq!(
+            bg.get("background").and_then(value_as_string).as_deref(),
+            Some("#00ff00")
+        );
+    }
+
+    #[test]
+    fn all_effect_state_prefixes_keys_with_effect_id() {
+        let state = default_state();
+        let all = state.all_effect_state();
+        let expected: usize = EFFECT_IDS
+            .iter()
+            .map(|id| state.effect_params(id).unwrap().len())
+            .sum();
+        assert_eq!(all.len(), expected + 1, "every param plus bypass");
+        for id in EFFECT_IDS {
+            assert!(all.contains_key(&format!("{id}.enabled")), "{id}");
+        }
+        assert!(all.contains_key("studio_light.auto_strength"));
+    }
+
+    #[test]
+    fn virtual_camera_info_reflects_sink() {
+        let mut state = default_state();
+        let info = state.virtual_camera_info();
+        assert_eq!(
+            info.get("sink").and_then(value_as_string).as_deref(),
+            Some("none")
+        );
+        assert!(!info.contains_key("media.class"));
+        assert!(!info.contains_key("verified"));
+
+        state.output_sink = "pipewire:vinoopeneffects".into();
+        state.virtual_camera_verified = Some(true);
+        let info = state.virtual_camera_info();
+        assert_eq!(
+            info.get("media.class").and_then(value_as_string).as_deref(),
+            Some("Video/Source")
+        );
+        assert_eq!(info.get("verified").and_then(value_as_bool), Some(true));
+    }
+
+    #[test]
+    fn capabilities_surface_last_error() {
+        let mut state = default_state();
+        assert!(!state.capabilities().contains_key("error"));
+        state.last_error = Some("camera busy".into());
+        assert_eq!(
+            state
+                .capabilities()
+                .get("error")
+                .and_then(value_as_string)
+                .as_deref(),
+            Some("camera busy")
+        );
+    }
+
+    #[test]
+    fn new_state_starts_on_the_configured_camera() {
+        let mut app = shared::config::AppState::default();
+        app.camera.selected = "/dev/video2".into();
+        let state = DaemonState::new(app, false);
+        assert_eq!(state.active_camera, "/dev/video2");
+        assert_eq!(state.status, DaemonStatus::Stopped);
     }
 }

@@ -904,3 +904,161 @@ async fn effects_proxy(conn: &Connection) -> zbus::Result<Proxy<'_>> {
 async fn devices_proxy(conn: &Connection) -> zbus::Result<Proxy<'_>> {
     Proxy::new(conn, SERVICE_NAME, OBJECT_PATH, DEVICES_INTERFACE).await
 }
+
+#[cfg(test)]
+mod tests {
+    use clap::{CommandFactory, ValueEnum};
+    use shared::dbus::{
+        EFFECT_IDS, REACTION_IDS, VariantMap, bool_value, i32_value, str_value, u32_value,
+        value_as_bool, value_as_string, value_as_u32,
+    };
+
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        Cli::try_parse_from(std::iter::once("vinoopeneffects-ctl").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn clap_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn effect_args_cover_every_daemon_effect() {
+        let ids: Vec<_> = EffectArg::value_variants().iter().map(|e| e.id()).collect();
+        assert_eq!(ids, EFFECT_IDS);
+    }
+
+    #[test]
+    fn reaction_args_cover_every_daemon_reaction() {
+        let ids: Vec<_> = Reaction::value_variants().iter().map(|r| r.id()).collect();
+        assert_eq!(ids, REACTION_IDS);
+    }
+
+    #[test]
+    fn zoom_and_mode_ids_match_config_values() {
+        let zooms: Vec<_> = Zoom::value_variants().iter().map(|z| z.id()).collect();
+        assert_eq!(zooms, ["subtle", "normal", "tight"]);
+        let modes: Vec<_> = Mode::value_variants().iter().map(|m| m.id()).collect();
+        assert_eq!(modes, ["single", "group"]);
+    }
+
+    #[test]
+    fn enable_flags_resolve() {
+        let flags = |on, off| EnableFlags { on, off }.resolve();
+        assert_eq!(flags(true, false), Some(true));
+        assert_eq!(flags(false, true), Some(false));
+        assert_eq!(flags(false, false), None);
+    }
+
+    #[test]
+    fn on_and_off_conflict() {
+        assert!(parse(&["portrait-blur", "--on", "--off"]).is_err());
+        assert!(parse(&["passthrough", "--on", "--off"]).is_err());
+    }
+
+    #[test]
+    fn numeric_flags_are_range_checked() {
+        assert!(parse(&["portrait-blur", "--strength", "100"]).is_ok());
+        assert!(parse(&["portrait-blur", "--strength", "101"]).is_err());
+        assert!(parse(&["center-stage", "--crop-top", "512"]).is_ok());
+        assert!(parse(&["center-stage", "--crop-top", "513"]).is_err());
+        assert!(parse(&["studio-light", "--brightness=-100"]).is_ok());
+        assert!(parse(&["studio-light", "--brightness=-101"]).is_err());
+        assert!(parse(&["studio-light", "--bg-brightness", "101"]).is_err());
+    }
+
+    #[test]
+    fn kebab_case_values_parse_to_enums() {
+        let cli = parse(&["enable", "bg-replace"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Enable {
+                effect: EffectArg::BgReplace
+            }
+        ));
+
+        let cli = parse(&["react", "thumbs-up"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::React {
+                reaction: Reaction::ThumbsUp
+            }
+        ));
+
+        assert!(parse(&["enable", "not-an-effect"]).is_err());
+    }
+
+    #[test]
+    fn studio_light_auto_light_takes_an_explicit_bool() {
+        let cli = parse(&["studio-light", "--auto-light", "false"]).unwrap();
+        let Command::StudioLight { auto_light, .. } = cli.command else {
+            panic!("expected studio-light");
+        };
+        assert_eq!(auto_light, Some(false));
+    }
+
+    #[test]
+    fn parse_value_picks_the_narrowest_type() {
+        assert_eq!(value_as_bool(&parse_value("true")), Some(true));
+        assert_eq!(value_as_bool(&parse_value("FALSE")), Some(false));
+
+        let unsigned = parse_value("42");
+        assert_eq!(u32::try_from(&unsigned).ok(), Some(42));
+
+        let negative = parse_value("-7");
+        assert_eq!(i32::try_from(&negative).ok(), Some(-7));
+        assert_eq!(value_as_u32(&negative), None);
+
+        assert_eq!(
+            value_as_string(&parse_value("#112233")).as_deref(),
+            Some("#112233")
+        );
+        // Out of i32 range falls back to a string rather than wrapping.
+        assert_eq!(
+            value_as_string(&parse_value("99999999999")).as_deref(),
+            Some("99999999999")
+        );
+    }
+
+    #[test]
+    fn simple_value_stringifies_each_scalar_type() {
+        let map = VariantMap::from([
+            ("s".into(), str_value("hello")),
+            ("u".into(), u32_value(7)),
+            ("i".into(), i32_value(-3)),
+            ("b".into(), bool_value(true)),
+        ]);
+        assert_eq!(simple_value(&map, "s").as_deref(), Some("hello"));
+        assert_eq!(simple_value(&map, "u").as_deref(), Some("7"));
+        assert_eq!(simple_value(&map, "i").as_deref(), Some("-3"));
+        assert_eq!(simple_value(&map, "b").as_deref(), Some("true"));
+        assert_eq!(simple_value(&map, "missing"), None);
+    }
+
+    #[test]
+    fn format_params_is_sorted_key_value_pairs() {
+        let map = VariantMap::from([
+            ("strength".into(), u32_value(60)),
+            ("enabled".into(), bool_value(false)),
+            ("brightness".into(), i32_value(-20)),
+        ]);
+        assert_eq!(
+            format_params(&map),
+            "brightness=-20 enabled=false strength=60"
+        );
+        assert_eq!(format_params(&VariantMap::new()), "");
+    }
+
+    #[test]
+    fn format_params_falls_back_to_debug_for_non_scalars() {
+        let map = VariantMap::from([(
+            "available".into(),
+            shared::dbus::str_array_value(&["cpu", "npu"]),
+        )]);
+        let out = format_params(&map);
+        assert!(out.starts_with("available="), "{out}");
+        assert!(out.contains("cpu") && out.contains("npu"), "{out}");
+    }
+}
