@@ -224,11 +224,23 @@ pub fn build_source_for(info: &CameraInfo) -> Result<gst::Element> {
             };
             gst::ElementFactory::make("v4l2src")
                 .property("device", device_path)
+                .property("extra-controls", fixed_framerate_controls())
                 .build()
                 .context("create v4l2src")
         }
         other => Err(anyhow!("unknown camera api: {other}")),
     }
+}
+
+/// Controls `v4l2src` applies when it opens the camera. Another app can leave
+/// `exposure_dynamic_framerate` on (the driver default is off), which lets
+/// auto-exposure stretch frames past the frame interval in dim light, so the
+/// feed starts at 30 fps and sags. Chrome resets it on open for the same reason.
+/// A camera without the control just logs a GStreamer warning.
+fn fixed_framerate_controls() -> gst::Structure {
+    gst::Structure::builder("controls")
+        .field("exposure_dynamic_framerate", 0i32)
+        .build()
 }
 
 fn device_to_info(device: &gst::Device) -> Option<CameraInfo> {
