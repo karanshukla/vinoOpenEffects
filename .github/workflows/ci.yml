@@ -91,7 +91,8 @@ jobs:
           done
       - run: cargo test -p vinoopeneffects-core
 
-  # Line coverage of the workspace tests, reported in the job summary.
+  # Line coverage of the workspace tests, reported in the job summary and
+  # gated on a minimum so it can't silently drop.
   coverage:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
@@ -113,6 +114,9 @@ jobs:
             cargo llvm-cov report --summary-only
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+      # Raise this as coverage grows; it guards against regressions, not a target.
+      - name: Enforce minimum line coverage
+        run: cargo llvm-cov report --summary-only --fail-under-lines 40
 
   build-npu:
     runs-on: ubuntu-26.04
