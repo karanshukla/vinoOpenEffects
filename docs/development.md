@@ -90,7 +90,7 @@ change is meant to alter the output, update the digest and say so in the PR.
 | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
 | `test` | `cargo test --workspace` |
 | `core` | Crate boundaries (`core` links no GStreamer, GTK or PipeWire; the GUI and CLI depend on `shared` only), then `core`'s tests with no system packages installed |
-| `coverage` | `cargo llvm-cov`, summary in the job output; fails below 40% line coverage |
+| `coverage` | `cargo llvm-cov`: a summary in the job output and an upload to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), which comments on each PR; fails below 40% line coverage (a Coveralls outage never fails it) |
 | `build-npu` | `cargo check` of the daemon with and without default features |
 | `msrv` | `cargo +1.92 check --workspace` |
 | `install` | `shellcheck` on the install scripts, then `install.sh --no-models` into a scratch prefix, a check of every installed file, and `uninstall.sh`, which must leave nothing behind |
