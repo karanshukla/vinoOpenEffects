@@ -33,6 +33,32 @@ scripts/install.sh            # add --no-gui for the daemon and CLI only
 It fetches the sha256-verified models and an onnxruntime, using the OpenVINO
 build when it finds an NPU. Then open **vinoOpenEffects** from your app menu, or:
 
+The GUI needs GTK 4 and libadwaita 1.7 or newer.
+
+### Upgrading from openeffects
+
+This project is a hard fork of `openeffects` and everything was renamed. Installing the new packages removes the old ones and their leftover files (old unit, D-Bus service, desktop entry, icon, binaries).
+
+| Before | Now |
+|---|---|
+| packages `openeffectsd`, `openeffectsctl`, `openeffects` | `vinoopeneffects-daemon`, `vinoopeneffects-ctl`, `vinoopeneffects` |
+| `systemctl --user ... openeffectsd` | `systemctl --user ... vinoopeneffects-daemon` |
+| `OE_EP` | `VINOOPENEFFECTS_EP` |
+| camera picker entry "OpenEffects Virtual Camera" | "vinoOpenEffects Virtual Camera" |
+| `openeffectsctl` | `vinoopeneffects-ctl` (there is no `openeffectsctl` alias) |
+
+Your config and downloaded models are migrated automatically on first start of the new daemon/GUI. If you set `OE_EP` in a systemd drop-in, the migration rewrites it to `VINOOPENEFFECTS_EP`. Update any scripts, keybinds or Waybar modules that call `openeffectsctl`, and re-select the camera in apps (Zoom, OBS, browsers) since the device name changed.
+
+## Usage
+
+Start the daemon (usually handled automatically by the systemd user service):
+```bash
+systemctl --user start vinoopeneffects-daemon
+```
+
+### CLI Examples
+
+Control effects via `vinoopeneffects-ctl` (see the full [CLI reference](docs/cli.md)):
 ```bash
 vinoopeneffects-ctl start                          # advertise the virtual camera
 vinoopeneffects-ctl portrait-blur --on --strength 70
