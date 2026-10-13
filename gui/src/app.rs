@@ -185,6 +185,8 @@ pub fn build_window(
     glib::MainContext::default().spawn_local(async move {
         while let Ok(update) = update_rx.recv().await {
             if matches!(update, UiUpdate::DaemonQuit) {
+                // pipewiresrc must reach NULL before teardown, or PipeWire's thread hits freed memory.
+                widgets.preview.drop_pipeline();
                 loop_app.quit();
                 continue;
             }

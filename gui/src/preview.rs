@@ -314,7 +314,7 @@ impl Preview {
         self.problem.set_visible(true);
     }
 
-    fn drop_pipeline(&self) {
+    pub(crate) fn drop_pipeline(&self) {
         self.bus_watch.borrow_mut().take();
         if let Some(pipeline) = self.pipeline.borrow_mut().take() {
             let _ = pipeline.set_state(gst::State::Null);
