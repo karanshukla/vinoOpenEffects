@@ -109,17 +109,23 @@ groups cargo and action updates weekly after a 7-day cooldown.
 
 ## Releases
 
-The version lives once, in `[workspace.package]` in `Cargo.toml`, and every crate
-inherits it.
+Releases are numbered consecutively: `v1`, `v2`, and so on. A release is a tag
+and a changelog entry. There is no release workflow and no packages yet:
+vinoOpenEffects installs from source ([install.md](install.md)).
 
 ```bash
-scripts/bump-version.sh 0.2.0      # rewrites Cargo.toml, syncs Cargo.lock, commits, tags v0.2.0
-git cliff --tag v0.2.0 -o CHANGELOG.md
-git push && git push origin v0.2.0
+git cliff --unreleased --tag v2 --prepend CHANGELOG.md   # file pending commits under v2
+git commit -am "docs(changelog): v2"
+git tag v2 && git push && git push origin v2
 ```
 
-A release is a tag and a changelog entry. There is no release workflow and no
-packages yet: vinoOpenEffects installs from source ([install.md](install.md)).
+The first release has no earlier `vN` tag to start from, so it uses a range
+from the last inherited upstream tag instead:
+`git cliff v0.1.4..HEAD --tag v1 --prepend CHANGELOG.md`.
+
+The crate version in `[workspace.package]` in `Cargo.toml` is separate from the
+release number. `scripts/bump-version.sh` still takes a semver `x.y.z` and tags
+`vx.y.z`, so don't use it to cut a consecutive release.
 
 ### Changelog
 
@@ -130,5 +136,4 @@ is what gets a change into the changelog.
 
 ```bash
 git cliff --unreleased            # preview what the next release would list
-git cliff -o CHANGELOG.md         # regenerate the whole file
 ```
