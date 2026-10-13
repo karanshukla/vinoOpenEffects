@@ -12,13 +12,8 @@
 #    installs cleanly on minimal systems.
 set -e
 
-# --- 1. old install cleanup -------------------------------------------------
 
 if command -v systemctl >/dev/null 2>&1; then
-    # Drop global (/etc/systemd/user) enablement of the old unit, then try to
-    # stop it in every logged-in user manager. Best effort: per-user enablement
-    # symlinks under ~/.config/systemd/user can't be reached from here, but they
-    # dangle harmlessly once the unit file below is gone.
     systemctl --global disable openeffectsd.service >/dev/null 2>&1 || true
     for d in /run/user/*; do
         uid=${d##*/}
@@ -43,11 +38,9 @@ rm -f /usr/share/icons/hicolor/scalable/apps/in.co.funinkina.OpenEffects.svg
 
 rm -f /usr/bin/openeffectsd /usr/bin/openeffectsctl /usr/bin/openeffects
 
-# Old bundled models; the new daemon reads /usr/share/vinoopeneffects/models.
 rm -rf /usr/share/openeffects/models
 rmdir /usr/share/openeffects >/dev/null 2>&1 || true
 
-# --- 2. caches --------------------------------------------------------------
 
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true

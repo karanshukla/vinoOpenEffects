@@ -1,5 +1,4 @@
-# Experimental: not fetched by scripts/fetch-models.sh. Generate and install it
-# with scripts/export-iat.py. NPU only (~10 ms there, ~850 ms on CPU).
+# Not fetched by scripts/fetch-models.sh; generate and install it with scripts/export-iat.py.
 [model]
 id = "iat_lowlight"
 name = "IAT low-light enhancer (LOL v1)"

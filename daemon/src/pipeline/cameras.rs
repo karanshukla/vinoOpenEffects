@@ -115,9 +115,6 @@ pub fn preferred_format(info: &CameraInfo) -> Option<PipelineFormat> {
         .find(|d| device_to_info(d).is_some_and(|i| i.id == info.id))?;
     let caps = device.caps()?;
 
-    // Collect (width, height) -> best fps across raw and MJPEG modes; the
-    // capture pipeline's decodebin handles either, so a camera that only does
-    // 720p in MJPEG (common for UVC webcams) still counts as native 720p.
     let mut modes: Vec<(u32, u32, i32)> = Vec::new();
     for s in caps.iter() {
         let name = s.name().as_str();
@@ -248,7 +245,7 @@ fn device_to_info(device: &gst::Device) -> Option<CameraInfo> {
 
     let node_name = props.get::<String>("node.name").ok();
     if node_name.as_deref() == Some(PIPEWIRE_NODE_NAME) {
-        return None; // never enumerate our own virtual output
+        return None;
     }
 
     let device_api = props.get::<String>("device.api").ok().unwrap_or_default();
@@ -266,12 +263,10 @@ fn device_to_info(device: &gst::Device) -> Option<CameraInfo> {
         .unwrap_or(display);
 
     let (api, id, path) = if device_api == "v4l2" && !v4l2_path.is_empty() {
-        // Any v4l2-backed camera — whether surfaced by v4l2deviceprovider or by
-        // pipewiredeviceprovider — is reachable via v4l2src on /dev/videoN.
-        // That works without any PipeWire camera-access grant.
+        // v4l2src on /dev/videoN needs no PipeWire camera-access grant, whichever provider surfaced
+        // the device.
         (String::from("v4l2"), v4l2_path.clone(), v4l2_path)
     } else if let Some(name) = node_name.clone() {
-        // PipeWire node without a v4l2 backing path (true virtual sources only).
         (String::from("pipewire"), name, v4l2_path)
     } else if !v4l2_path.is_empty() {
         (String::from("v4l2"), v4l2_path.clone(), v4l2_path)

@@ -252,56 +252,61 @@ mod tests {
         assert!(fail.fix.is_some());
     }
 
+    fn activation_file(exec: &str, exec_exists: bool) -> Vec<ActivationFileInfo> {
+        vec![ActivationFileInfo {
+            path: PathBuf::from("/usr/share/dbus-1/services/test.service"),
+            exists: true,
+            exec_path: Some(PathBuf::from(exec)),
+            exec_exists,
+        }]
+    }
+
     #[test]
-    fn test_dbus_verdict_when_stopped_diagnoses_activation() {
-        // 1. Missing activation file
+    fn test_dbus_verdict_when_stopped_diagnoses_missing_activation_file() {
         let no_files = vec![];
-        let v1 = dbus_verdict(
+        let v = dbus_verdict(
             Err("name has no owner"),
             Some(&no_files),
             Some(UnitState::Inactive),
         );
-        assert_eq!(v1.status, Status::Fail);
-        assert!(v1.detail.contains("no D-Bus activation"));
+        assert_eq!(v.status, Status::Fail);
+        assert!(v.detail.contains("no D-Bus activation"));
+    }
 
-        // 2. Broken binary path
-        let broken = vec![ActivationFileInfo {
-            path: PathBuf::from("/usr/share/dbus-1/services/test.service"),
-            exists: true,
-            exec_path: Some(PathBuf::from("/usr/bin/missing")),
-            exec_exists: false,
-        }];
-        let v2 = dbus_verdict(
+    #[test]
+    fn test_dbus_verdict_when_stopped_diagnoses_broken_exec_path() {
+        let broken = activation_file("/usr/bin/missing", false);
+        let v = dbus_verdict(
             Err("name has no owner"),
             Some(&broken),
             Some(UnitState::Inactive),
         );
-        assert_eq!(v2.status, Status::Fail);
-        assert!(v2.detail.contains("missing"));
+        assert_eq!(v.status, Status::Fail);
+        assert!(v.detail.contains("missing"));
+    }
 
-        // 3. Failed unit
-        let valid = vec![ActivationFileInfo {
-            path: PathBuf::from("/usr/share/dbus-1/services/test.service"),
-            exists: true,
-            exec_path: Some(PathBuf::from("/usr/bin/daemon")),
-            exec_exists: true,
-        }];
-        let v3 = dbus_verdict(
+    #[test]
+    fn test_dbus_verdict_when_stopped_diagnoses_failed_unit() {
+        let valid = activation_file("/usr/bin/daemon", true);
+        let v = dbus_verdict(
             Err("name has no owner"),
             Some(&valid),
             Some(UnitState::Failed),
         );
-        assert_eq!(v3.status, Status::Fail);
-        assert!(v3.detail.contains("daemon failed on startup"));
+        assert_eq!(v.status, Status::Fail);
+        assert!(v.detail.contains("daemon failed on startup"));
+    }
 
-        // 4. Inactive unit with valid file (not activated yet)
-        let v4 = dbus_verdict(
+    #[test]
+    fn test_dbus_verdict_when_stopped_suggests_reload_for_unactivated_unit() {
+        let valid = activation_file("/usr/bin/daemon", true);
+        let v = dbus_verdict(
             Err("name has no owner"),
             Some(&valid),
             Some(UnitState::Inactive),
         );
-        assert_eq!(v4.status, Status::Fail);
-        assert!(v4.fix.as_ref().unwrap().contains("ReloadConfig"));
+        assert_eq!(v.status, Status::Fail);
+        assert!(v.fix.as_ref().unwrap().contains("ReloadConfig"));
     }
 
     #[test]

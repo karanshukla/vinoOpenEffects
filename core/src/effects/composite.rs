@@ -72,7 +72,7 @@ impl Background {
 fn composite_full(fg: &mut [u8], bg: &[u8], lut: &[u8]) {
     for (i, &m) in lut.iter().enumerate() {
         if m == 255 {
-            continue; // fully foreground: nothing to blend
+            continue;
         }
         let p = i * 4;
         let m = m as u32;
@@ -131,8 +131,6 @@ pub(crate) fn composite_low(
             let p = (y * w + x) * 4;
             let m = m as u32;
             for c in 0..3 {
-                // Un-premultiply: bg = premul·255 / weight. Fall back to the
-                // foreground when the neighborhood had no background weight.
                 let bg = (s[c] as u32 * 255)
                     .checked_div(wbg)
                     .map_or(fg[p + c] as u32, |v| v.min(255));

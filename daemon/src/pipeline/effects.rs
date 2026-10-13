@@ -48,8 +48,8 @@ pub fn build_effects_bin(app: &AppState) -> Result<gst::Bin> {
         .context("create videoscale")?;
 
     apply_app_state_to_elements(&effects, app);
-    // Here rather than in apply_app_state_to_elements, which runs on every
-    // effect change: setting the provider reloads every loaded model.
+    // Kept out of apply_app_state_to_elements, which runs per effect change: setting the provider
+    // reloads every model.
     let provider = oe_core::inference::effective_ep(app.inference.provider.as_str());
     if effects.property::<String>("inference-provider") != provider {
         effects.set_property("inference-provider", provider);
@@ -225,11 +225,9 @@ mod tests {
         assert!(!effects.property::<bool>("bg-replace-enabled"));
         assert!(!effects.property::<bool>("center-stage-enabled"));
         assert!(!effects.property::<bool>("reactions-enabled"));
-        // Studio light's derived brightness/contrast collapse to neutral too.
         assert_eq!(effects.property::<f32>("studio-light-brightness"), 0.0);
         assert_eq!(effects.property::<f32>("studio-light-contrast"), 1.0);
 
-        // Clearing bypass restores the enabled effects.
         app.bypass = false;
         apply_app_state_to_elements(&effects, &app);
         assert!(effects.property::<bool>("studio-light-enabled"));
@@ -246,7 +244,6 @@ mod tests {
             eprintln!("skipping: GStreamer plugins not available");
             return;
         }
-        // Default AppState: no effect enabled -> element starts in passthrough.
         let app = AppState::default();
 
         let pipeline = gst::Pipeline::new();
@@ -273,7 +270,6 @@ mod tests {
         gst::Element::link_many([&src, &caps, bin.upcast_ref(), &sink]).unwrap();
 
         pipeline.set_state(gst::State::Playing).unwrap();
-        // Fire a burst into the live element; this disables passthrough.
         effects.set_property("trigger-reaction", "tada");
 
         let bus = pipeline.bus().unwrap();

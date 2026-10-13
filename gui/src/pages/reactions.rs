@@ -29,8 +29,6 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         })
     };
 
-    // Manual burst picker (always sensitive). A FlowBox wraps the buttons
-    // instead of forcing a minimum window width.
     let emoji_flow = gtk::FlowBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .homogeneous(true)

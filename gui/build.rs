@@ -41,20 +41,15 @@ fn generate_proxies() -> Result<(), Box<dyn Error>> {
             env!("CARGO_PKG_VERSION"),
         )?;
 
-    // Strip the `//!` module-doc header: this file is `include!`d inside a
-    // `mod proxies { ... }` block, where inner doc comments are not allowed.
-    // Match indented lines too, since not all of the header sits at column 0.
+    // The output is `include!`d inside `mod proxies { ... }`, where inner `//!` docs are illegal.
     let generated: String = generated
         .lines()
         .filter(|line| !line.trim_start().starts_with("//!"))
         .collect::<Vec<_>>()
         .join("\n");
 
-    // zbus_xmlgen always generates `receive_<rust_method_name>_changed()` for
-    // `#[zbus(property)]` getters, regardless of the XML's EmitsChangedSignal
-    // annotation. That collides with the `StatusChanged` signal's generated
-    // `receive_status_changed()`. Rename the signal proxy method (keeping the
-    // wire name `StatusChanged` via `name = "..."`) so both can coexist.
+    // zbus_xmlgen emits `receive_status_changed()` for the Status property regardless of
+    // EmitsChangedSignal, colliding with the StatusChanged signal's.
     let generated = generated.replace(
         "#[zbus(signal)]\n    fn status_changed(&self, new_status: &str) -> zbus::Result<()>;",
         "#[zbus(signal, name = \"StatusChanged\")]\n    fn daemon_status_changed(&self, new_status: &str) -> zbus::Result<()>;",

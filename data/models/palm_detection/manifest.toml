@@ -4,16 +4,12 @@ name = "MediaPipe Palm Detection"
 version = "2023feb"
 license = "Apache-2.0"
 
-# NHWC RGB input scaled to 0..1, letterboxed to 192x192 (aspect preserved).
 [model.input]
 name = "input_1"
 shape = [1, 192, 192, 3]
 layout = "NHWC"
 preprocessing = "scale_0_1"
 
-# Anchor-free SSD head: 2016 anchors. tf2onnx names the two graph outputs
-# "Identity"/"Identity_1"; the wrapper binds them by shape (18 vs 1 last dim),
-# not by name. regressors: [cx,cy,w,h, 7×(x,y) palm keypoints]; scores: logit.
 [model.output.regressors]
 name = "Identity"
 shape = [1, 2016, 18]

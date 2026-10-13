@@ -97,9 +97,7 @@ async fn run(
 ) {
     loop {
         match run_once(&mut cmd_rx, &update_tx).await {
-            // Quit requested (or the GUI dropped the command channel): stop the
-            // client without reconnecting. Reconnecting here would re-activate
-            // the daemon we just asked to quit (D-Bus / systemd activation).
+            // Reconnecting would D-Bus-activate the daemon we just asked to quit.
             Ok(()) => break,
             Err(err) => {
                 tracing::warn!(%err, "lost connection to vinoopeneffects-daemon, retrying");
@@ -121,7 +119,6 @@ async fn run_once(
     let daemon = Daemon1Proxy::new(&conn).await?;
     let devices = Devices1Proxy::new(&conn).await?;
 
-    // Initial snapshot.
     update_tx
         .send(UiUpdate::AllState(effects.get_all_state().await?))
         .await
@@ -147,10 +144,8 @@ async fn run_once(
     loop {
         tokio::select! {
             cmd = cmd_rx.recv() => {
-                // A failed method call is not a lost connection: tearing the
-                // loop down would re-snapshot all state and visibly reset the
-                // controls. Log and keep going; a real disconnect surfaces as
-                // a closed signal stream below.
+                // Log failed calls instead of propagating: a teardown would re-snapshot state and
+                // visibly reset the controls.
                 match cmd {
                     Some(GuiCommand::SetEnabled { id, on }) => {
                         if let Err(err) = effects.set_enabled(&id, on).await {
@@ -188,8 +183,6 @@ async fn run_once(
                             tracing::warn!(%err, "Quit failed (daemon may already be gone)");
                         }
                         update_tx.send(UiUpdate::DaemonQuit).await.ok();
-                        // Stop the client so the reconnect loop doesn't bring the
-                        // daemon back via D-Bus activation.
                         return Ok(());
                     }
                     None => return Ok(()),
@@ -226,7 +219,6 @@ async fn run_once(
                     .send(UiUpdate::Status(args.new_status.to_string()))
                     .await
                     .ok();
-                // Refresh capabilities (models_ready, virtual_camera) on status change.
                 push_capabilities(&daemon, update_tx).await;
             }
             signal = inference_changed.next() => {

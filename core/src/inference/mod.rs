@@ -371,8 +371,6 @@ fn with_execution_provider(
     };
     let ep = OpenVINO::default().with_device_type(device);
     if !ep.is_available().unwrap_or(false) {
-        // The CPU-only runtime has no OpenVINO EP: fine for auto, and the whole
-        // point of the strict modes otherwise (a CPU run must not pass as NPU).
         anyhow::ensure!(
             !strict,
             "OpenVINO execution provider unavailable (is ORT_DYLIB_PATH an onnxruntime-openvino build?)"

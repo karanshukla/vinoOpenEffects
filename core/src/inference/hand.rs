@@ -85,7 +85,6 @@ impl HandLandmarks {
         if !radius.is_finite() || radius < 0.5 {
             return;
         }
-        // One mask cell in frame pixels: the antialiasing band.
         let (cw, ch) = (fw / size as f32, fh / size as f32);
         let feather = cw.max(ch);
 
@@ -158,7 +157,6 @@ const BONES: [(usize, usize); 20] = [
     (17, 18),
     (18, 19),
     (19, 20),
-    // palm outline, closed below by (17, 0)
     (1, 5),
     (5, 9),
     (9, 13),
@@ -214,8 +212,8 @@ impl PalmDetector {
         let tensor = Tensor::from_array(([1i64, PALM_SIZE as i64, PALM_SIZE as i64, 3], input))?;
         let outputs = self.session.run(ort::inputs![INPUT => tensor])?;
 
-        // tf2onnx names the outputs Identity/Identity_1; bind by length
-        // (regressors = 2016×18, scores = 2016×1) rather than trusting order.
+        // tf2onnx's Identity/Identity_1 naming doesn't say which output is which, so bind by
+        // length.
         let mut regressors: Option<Vec<f32>> = None;
         let mut scores: Option<Vec<f32>> = None;
         for name in ["Identity", "Identity_1"] {
@@ -233,7 +231,6 @@ impl PalmDetector {
             anyhow::bail!("palm_detection: unexpected output shapes");
         };
 
-        // Letterbox mapping back to normalized frame coords.
         let l = w.max(h) as f32;
         let padx = (l - w as f32) / 2.0;
         let pady = (l - h as f32) / 2.0;
@@ -246,12 +243,10 @@ impl PalmDetector {
                 continue;
             }
             let r = &reg[i * 18..i * 18 + 4];
-            // Box center/size are deltas in 192px, normalized then anchor-shifted.
             let cxn = r[0] / inv + ax;
             let cyn = r[1] / inv + ay;
             let wn = r[2] / inv;
             let hn = r[3] / inv;
-            // padded-square normalized → frame normalized
             let cx = (cxn * l - padx) / w as f32;
             let cy = (cyn * l - pady) / h as f32;
             let pw = wn * l / w as f32;
@@ -321,9 +316,8 @@ impl HandLandmarker {
         let tensor = Tensor::from_array(([1i64, HAND_SIZE as i64, HAND_SIZE as i64, 3], input))?;
         let outputs = self.session.run(ort::inputs![INPUT => tensor])?;
 
-        // Four outputs (Identity..Identity_3): screen landmarks (63, values in
-        // 0..224), confidence (1), handedness (1), world landmarks (63, metric).
-        // Pick the screen-landmark output by magnitude and confidence by order.
+        // Screen and world landmarks are both 63 floats; only screen ones (0..224 px) exceed
+        // magnitude 5.
         let mut screen: Option<Vec<f32>> = None;
         let mut confidence: Option<f32> = None;
         for name in ["Identity", "Identity_1", "Identity_2", "Identity_3"] {
@@ -581,10 +575,8 @@ mod tests {
 
         let at =
             |u: f32, v: f32| mask[(v * size as f32) as usize * size + (u * size as f32) as usize];
-        // Palm centre and the middle fingertip are inside.
         assert!(at(0.5, 0.9 - 0.1) > 0.99);
         assert!(at(0.5, 0.9 - 0.2 * 2.5) > 0.9);
-        // Far from the hand stays background.
         assert_eq!(at(0.05, 0.05), 0.0);
         assert_eq!(at(0.95, 0.5), 0.0);
     }

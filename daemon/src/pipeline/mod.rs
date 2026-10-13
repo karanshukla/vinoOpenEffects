@@ -139,9 +139,6 @@ pub fn spawn_worker(
             return;
         }
         let (inbox_tx, inbox) = std_mpsc::channel::<WorkerMsg>();
-        // Forward daemon commands onto the inbox. Parked in `blocking_recv`, so
-        // it costs nothing while idle; when the command channel closes it asks
-        // the worker to shut down.
         let forward_tx = inbox_tx.clone();
         std::thread::spawn(move || {
             while let Some(cmd) = commands.blocking_recv() {
@@ -165,19 +162,11 @@ fn worker_loop(
     let mut stored_app: Option<AppState> = None;
     let mut provider: Option<ProviderHandle> = None;
     let mut capture: Option<builder::BuiltCapture> = None;
-    // The format the provide node currently advertises; follows the selected
-    // camera's preferred native mode.
     let mut current_fmt = PipelineFormat::DEFAULT;
-    // Whether a consumer is currently pulling (provide node STREAMING).
     let mut consumer_streaming = false;
-    // When set, the capture pipeline is released once this instant passes and no
-    // consumer has reconnected (debounce against portal probe/retry blips).
     let mut stop_deadline: Option<Instant> = None;
 
     loop {
-        // Sleep until a message arrives, or until the capture-release grace
-        // window ends. With no camera open and nothing pending this blocks
-        // indefinitely: an idle daemon takes no wakeups.
         let msg = match stop_deadline {
             Some(deadline) => {
                 match inbox.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
@@ -194,17 +183,12 @@ fn worker_loop(
 
         match msg {
             Some(WorkerMsg::Command(PipelineCommand::Start(app))) => {
-                // Tear any running capture so a config/camera change takes effect.
                 if let Some(c) = capture.take() {
                     c.stop();
                 }
                 bridge.clear();
                 stop_deadline = None;
 
-                // Adopt the selected camera's preferred native mode. A camera
-                // switch can change the advertised format, which requires
-                // re-advertising the provide node (consumers renegotiate on
-                // reconnect).
                 let fmt = builder::probe_format(&app);
                 stored_app = Some(app);
                 if provider.is_some() && fmt != current_fmt {
@@ -216,8 +200,6 @@ fn worker_loop(
                 }
                 current_fmt = fmt;
 
-                // Arm the provide node if not already advertised. The node sits
-                // in PAUSED with the real camera untouched until a consumer links.
                 if provider.is_none() {
                     provider = Some(spawn_provider(&bridge, current_fmt, &capture_tx, &events));
                     let _ = events.blocking_send(PipelineEvent::Advertised {
@@ -225,8 +207,6 @@ fn worker_loop(
                     });
                 }
 
-                // If a consumer is already streaming (live camera switch), rebuild
-                // the capture immediately rather than waiting for a state change.
                 if consumer_streaming && let Some(app) = stored_app.clone() {
                     start_capture(&app, current_fmt, &bridge, &events, &mut capture);
                 }
@@ -250,7 +230,6 @@ fn worker_loop(
                 stored_app = Some(app);
             }
             Some(WorkerMsg::Command(PipelineCommand::TriggerReaction(id))) => {
-                // Only meaningful while a consumer is streaming; otherwise drop.
                 if let Some(c) = capture.as_ref() {
                     c.trigger_reaction(&id);
                 }
@@ -288,11 +267,8 @@ fn worker_loop(
                 }
                 break;
             }
-            // Capture gating driven by the provide node's consumer state.
             Some(WorkerMsg::Capture(CaptureCmd::Start)) => {
                 consumer_streaming = true;
-                // A consumer is back -> cancel any pending release and ensure the
-                // camera is running (it may still be warm from a recent blip).
                 stop_deadline = None;
                 if capture.is_none()
                     && let Some(app) = stored_app.clone()
@@ -302,8 +278,6 @@ fn worker_loop(
             }
             Some(WorkerMsg::Capture(CaptureCmd::Stop)) => {
                 consumer_streaming = false;
-                // Debounce: don't release the camera yet — a portal probe/retry
-                // may reconnect within the grace window. Arm a deadline instead.
                 if capture.is_some() && stop_deadline.is_none() {
                     stop_deadline = Some(Instant::now() + CAPTURE_RELEASE_GRACE);
                 }
@@ -311,7 +285,6 @@ fn worker_loop(
             None => {}
         }
 
-        // Release the camera once the grace window elapses with no consumer.
         if let Some(deadline) = stop_deadline {
             if !consumer_streaming
                 && Instant::now() >= deadline

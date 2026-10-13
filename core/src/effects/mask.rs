@@ -31,6 +31,7 @@ const GF_EPS: f32 = 1e-4;
 /// subject/background boundary is a thin (~1px) anti-aliased line instead of
 /// a soft halo. Smaller = sharper/harder; larger = softer.
 const GF_EDGE_WIDTH: f32 = 0.06;
+const GF_RADIUS_DIVISOR: usize = 96;
 
 #[derive(Default)]
 pub(crate) struct PersonMask {
@@ -83,7 +84,6 @@ impl PersonMask {
         self.lut_h = 0;
         self.gf_low_w = 0;
         self.gf_low_h = 0;
-        // Normalized hand crops don't survive a resolution change.
         self.hands.clear();
     }
 
@@ -105,8 +105,6 @@ impl PersonMask {
         stride: usize,
         is_roi: bool,
     ) {
-        // A coordinate-space flip (full↔ROI) makes the previous mask grid
-        // incomparable, so drop the EMA history to avoid blending across spaces.
         let space_changed = self.is_roi != is_roi;
         let stale = self.mask.is_none() || space_changed || frame.is_multiple_of(SEG_INTERVAL);
         if !stale {
@@ -119,7 +117,6 @@ impl PersonMask {
         if let Some(model) = engine.selfie() {
             match model.segment(buf, w, h, stride) {
                 Ok(mut mask) => {
-                    // Before the EMA, so hand edges are smoothed with the body's.
                     self.paint_hands(engine, frame, buf, w, h, stride, &mut mask);
                     let a = SEG_EMA_ALPHA;
                     match &mut self.ema {
@@ -181,7 +178,6 @@ impl PersonMask {
         if self.gf_coef_gen != self.generation || self.gf_low_w != lw || self.gf_low_h != lh {
             self.gf_p_low.resize(n, 0.0);
             self.gf_i_low.resize(n, 0.0);
-            // Low-res mask (`p`) and luma guide (`I`, box-averaged per s×s block).
             for ly in 0..lh {
                 let v = (ly as f32 + 0.5) / lh as f32;
                 let (y0, y1) = (ly * s, (ly * s + s).min(h));
@@ -204,9 +200,7 @@ impl PersonMask {
                 }
             }
 
-            // Tight window: a small radius keeps the linear fit local so the
-            // matte stays crisp (a wide box smears the edge into a halo).
-            let r = (lw.min(lh) / 96).max(1);
+            let r = (lw.min(lh) / GF_RADIUS_DIVISOR).max(1);
             let mut mean_i = vec![0f32; n];
             let mut mean_p = vec![0f32; n];
             let mut corr_i = vec![0f32; n];
@@ -290,7 +284,6 @@ impl PersonMask {
             self.gf_coef_gen = self.generation;
         }
 
-        // Full-res apply against the live frame luma (every frame).
         self.lut.resize(w * h, 0);
         for y in 0..h {
             let fy = ((y as f32 + 0.5) / s as f32 - 0.5).clamp(0.0, lh as f32 - 1.0);
@@ -309,7 +302,6 @@ impl PersonMask {
                     as f32
                     / 65280.0;
                 let q = a * lum + b;
-                // Steepen the localized edge into a thin anti-aliased outline.
                 let t = ((q - (0.5 - GF_EDGE_WIDTH)) / (2.0 * GF_EDGE_WIDTH)).clamp(0.0, 1.0);
                 let alpha = t * t * (3.0 - 2.0 * t);
                 self.lut[y * w + x] = (alpha * 255.0) as u8;
@@ -362,7 +354,7 @@ fn box_f32(
 
 /// Bilinear lookup into an `lw`-stride f32 plane at the four pre-resolved
 /// corner indices with fractional weights `tx`,`ty`.
-#[allow(clippy::too_many_arguments)] // per-pixel hot path; a params struct would only add copies
+#[allow(clippy::too_many_arguments)]
 fn bilerp(
     buf: &[f32],
     lw: usize,

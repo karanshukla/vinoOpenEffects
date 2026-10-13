@@ -318,8 +318,6 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
-    // `autostart` manages the systemd unit and never needs the daemon running,
-    // so handle it before connecting / auto-starting.
     if let Command::Autostart { command } = &cli.command {
         return autostart(command);
     }
@@ -329,7 +327,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let conn = Connection::session().await?;
-    // Every other command talks to the daemon; bring it up if it isn't running.
     ensure_daemon(&conn).await;
 
     match cli.command {
@@ -480,9 +477,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Passthrough { on, off } => passthrough(&conn, on, off).await?,
         Command::Set { assignment, value } => set_param(&conn, &assignment, &value).await?,
         Command::Camera { command } => camera(&conn, command).await?,
-        // Handled before the daemon connection above.
-        Command::Autostart { .. } => unreachable!(),
-        Command::Doctor { .. } => unreachable!(),
+        Command::Autostart { .. } | Command::Doctor { .. } => {
+            unreachable!("handled before the daemon connection")
+        }
         Command::Watch => watch(&conn).await?,
     }
 
@@ -1015,7 +1012,6 @@ mod tests {
             value_as_string(&parse_value("#112233")).as_deref(),
             Some("#112233")
         );
-        // Out of i32 range falls back to a string rather than wrapping.
         assert_eq!(
             value_as_string(&parse_value("99999999999")).as_deref(),
             Some("99999999999")

@@ -182,7 +182,7 @@ impl Reactions {
     pub fn step_and_render(&mut self, img: &mut [u8], w: usize, h: usize, frame: u64) {
         self.particles.retain_mut(|p| {
             if frame < p.spawn_frame {
-                return true; // pending: keep, not yet moving or drawn
+                return true;
             }
             p.y += p.vy;
             let age = frame - p.spawn_frame;
@@ -245,9 +245,8 @@ fn render_particle(img: &mut [u8], w: usize, h: usize, sprite: &Sprite, p: &Part
     }
     let cx = (p.x + p.sway_amp * (p.sway_freq * age + p.sway_phase).sin()) * w as f32;
     let cy = p.y * h as f32;
-    let side = (p.size * h as f32).max(1.0); // square sprite side, px
+    let side = (p.size * h as f32).max(1.0);
     let (sin, cos) = p.tilt.sin_cos();
-    // A square rotated by any angle fits within side·√2.
     let reach = side * 0.5 * std::f32::consts::SQRT_2 + 1.0;
     let x_lo = (cx - reach).floor().clamp(0.0, w as f32) as usize;
     let x_hi = (cx + reach).ceil().clamp(0.0, w as f32) as usize;
@@ -258,10 +257,8 @@ fn render_particle(img: &mut [u8], w: usize, h: usize, sprite: &Sprite, p: &Part
         let oy = dy as f32 + 0.5 - cy;
         for dx in x_lo..x_hi {
             let ox = dx as f32 + 0.5 - cx;
-            // screen offset → sprite-space offset (inverse rotation)
             let sx = cos * ox + sin * oy;
             let sy = -sin * ox + cos * oy;
-            // sprite space [-side/2, side/2] → texel coords
             let tx = (sx / side + 0.5) * sprite.w as f32 - 0.5;
             let ty = (sy / side + 0.5) * sprite.h as f32 - 0.5;
             if tx < 0.0 || ty < 0.0 || tx > sprite.w as f32 - 1.0 || ty > sprite.h as f32 - 1.0 {
@@ -277,7 +274,6 @@ fn render_particle(img: &mut [u8], w: usize, h: usize, sprite: &Sprite, p: &Part
                 let dst = img[i + c] as f32;
                 img[i + c] = (texel[c] * a + dst * (1.0 - a)).round().clamp(0.0, 255.0) as u8;
             }
-            // leave frame alpha as-is
         }
     }
 }
@@ -316,10 +312,8 @@ mod tests {
         r.trigger("thumbs_up", 0);
         let mut buf = vec![0u8; 64 * 64 * 4];
         let first_y = r.particles[0].y;
-        // Step one frame: the first particle (spawn_frame 0) must move upward.
         r.step_and_render(&mut buf, 64, 64, 1);
         assert!(r.particles[0].y < first_y, "particle should rise");
-        // Run well past the worst-case lifetime; everything must clear out.
         for f in 2..=400 {
             r.step_and_render(&mut buf, 64, 64, f);
         }
@@ -332,7 +326,6 @@ mod tests {
         r.trigger("heart", 0);
         let (w, h) = (96, 96);
         let mut buf = vec![0u8; w * h * 4];
-        // Advance enough that a particle is fully on-screen and faded in.
         let mut touched = false;
         for f in 1..=60 {
             buf.iter_mut().for_each(|b| *b = 0);

@@ -23,10 +23,8 @@ fi
 old="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
 echo "==> Bumping $old -> $new"
 
-# Root workspace.package version (first version= line in the root manifest).
 sed -i -E "0,/^version = \"[^\"]+\"/s//version = \"$new\"/" Cargo.toml
 
-# Sync the lockfile entries for the workspace crates.
 cargo update --workspace >/dev/null
 
 git add Cargo.toml Cargo.lock

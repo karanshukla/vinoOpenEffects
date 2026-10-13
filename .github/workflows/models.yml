@@ -1,9 +1,6 @@
 name: Models
 
-# Real ONNX Runtime inference against the models in data/models. Kept out of
-# ci.yml so a model-host outage (GitHub raw, Hugging Face) can never block an
-# unrelated PR, and is not a required check. Normal CI only proves compile and
-# logic: the model-backed tests there no-op when no models are installed.
+# Separate from ci.yml so a model-host outage can never block an unrelated PR.
 
 on:
   pull_request:
@@ -21,10 +18,8 @@ on:
       - "scripts/fetch-ort.sh"
       - "core/src/inference/**"
       - ".github/workflows/models.yml"
-  # Weekly, with the cache bypassed, so a moved or changed upstream file shows up
-  # here rather than on a contributor's first fetch.
   schedule:
-    - cron: "0 7 * * 1" # Mondays, 07:00 UTC
+    - cron: "0 7 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -63,15 +58,11 @@ jobs:
         with:
           save-if: ${{ github.event_name != 'pull_request' }}
 
-      # The daemon looks in $XDG_DATA_HOME/vinoopeneffects/models and
-      # $XDG_DATA_HOME/vinoopeneffects/ort. Point both at the runner temp dir.
       - name: Point data directories at the runner temp dir
         run: |
           echo "XDG_DATA_HOME=$RUNNER_TEMP/xdg" >> "$GITHUB_ENV"
           echo "ORT_DYLIB_PATH=$RUNNER_TEMP/xdg/vinoopeneffects/ort/libonnxruntime.so" >> "$GITHUB_ENV"
 
-      # Keyed on everything the fetch depends on. Restore-only on pull requests
-      # (including forks); only main and the schedule write the cache.
       - name: Restore cached models
         id: cache-models
         if: github.event_name != 'schedule'
@@ -88,13 +79,9 @@ jobs:
           path: ${{ runner.temp }}/xdg/vinoopeneffects/ort
           key: ort-${{ hashFiles('scripts/fetch-ort.sh') }}
 
-      # Idempotent and sha256-verified, so a cache hit costs only the hashing and
-      # a corrupt or partial cache is repaired rather than trusted.
       - name: Fetch models
         run: scripts/fetch-models.sh
 
-      # onnxruntime shared library is loaded dynamically at runtime; fetch-ort.sh
-      # installs the CPU build so the tests can execute inference on the models.
       - name: Fetch onnxruntime
         run: scripts/fetch-ort.sh "$RUNNER_TEMP/xdg/vinoopeneffects/ort"
 
@@ -112,8 +99,6 @@ jobs:
           path: ${{ runner.temp }}/xdg/vinoopeneffects/ort
           key: ort-${{ hashFiles('scripts/fetch-ort.sh') }}
 
-      # The tests print "skipping: <model> model not installed" or "skipping: onnxruntime not available"
-      # and pass, so a green run alone would not prove inference ran. Fail if any of them skipped.
       - name: Test with real models
         run: |
           set -o pipefail

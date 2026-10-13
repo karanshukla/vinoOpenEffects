@@ -4,17 +4,12 @@ name = "MediaPipe Hand Landmark"
 version = "2023feb"
 license = "Apache-2.0"
 
-# NHWC RGB input scaled to 0..1; a square crop around the detected palm,
-# resized to 224x224 (v1 does not rotation-normalize the crop).
 [model.input]
 name = "input_1"
 shape = [1, 224, 224, 3]
 layout = "NHWC"
 preprocessing = "scale_0_1"
 
-# tf2onnx names the four graph outputs "Identity".."Identity_3" in this order:
-# landmarks (screen, 21×xyz in 224px), confidence, handedness, world landmarks.
-# The wrapper binds screen landmarks by value magnitude and confidence by order.
 [model.output.landmarks]
 name = "Identity"
 shape = [1, 63]

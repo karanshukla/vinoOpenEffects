@@ -1,14 +1,10 @@
-# cargo-deny policy. Project is GPL-3.0-or-later, so any GPL-compatible
-# permissive license is fine.
-
 [graph]
 all-features = false
 
 [advisories]
 version = 2
-# quick-xml 0.39 is pinned by zbus_xml, which is a build-dependency that only
-# parses the repo's own D-Bus introspection XML at compile time, never untrusted
-# input. Drop these once zbus_xml moves to quick-xml >= 0.41.
+# zbus_xml pins quick-xml 0.39 but only parses our own introspection XML at build time; drop once it
+# moves to quick-xml >= 0.41.
 ignore = [
     { id = "RUSTSEC-2026-0194", reason = "build-time parse of trusted in-repo XML" },
     { id = "RUSTSEC-2026-0195", reason = "build-time parse of trusted in-repo XML" },

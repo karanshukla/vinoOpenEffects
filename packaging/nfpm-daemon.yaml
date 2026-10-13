@@ -1,13 +1,3 @@
-# vinoopeneffects-daemon — the daemon package. Owns the GStreamer/PipeWire pipeline,
-# the D-Bus service + systemd user unit, and the bundled ML models. Both the CLI
-# and GUI packages depend on this one.
-#
-# Built by scripts/build-packages.sh (exports VERSION + ARCH, renders the
-# @bindir@ templates into dist/, stages sha256-verified models into dist/models/).
-#
-# Run manually:
-#   VERSION=0.1.0 ARCH=amd64 nfpm pkg -f packaging/nfpm-daemon.yaml -p deb -t dist/
-
 name: vinoopeneffects-daemon
 arch: ${ARCH}
 version: ${VERSION}
@@ -22,10 +12,6 @@ license: GPL-3.0-or-later
 section: video
 priority: optional
 
-# Hard fork of funinkina/openeffects: the old package names are superseded.
-# nfpm maps `replaces` to deb Replaces / rpm Obsoletes / arch replaces, and
-# `conflicts` to the matching Conflicts field. Leftover files are also swept by
-# packaging/postinstall.sh.
 replaces:
   - openeffectsd
 conflicts:
@@ -35,13 +21,9 @@ contents:
   - src: target/release/vinoopeneffects-daemon
     dst: /usr/bin/vinoopeneffects-daemon
 
-  # CPU onnxruntime, loaded at runtime (staged by build-packages.sh). An NPU
-  # user adds the OpenVINO build under ~/.local/lib/vinoopeneffects/ort with
-  # `ovfetch install`, which the daemon prefers when an NPU is present.
   - src: dist/ort/*
     dst: /usr/lib/vinoopeneffects/ort/
 
-  # D-Bus interface introspection XML
   - src: data/dbus/io.github.karanshukla.vinoopeneffects.Daemon1.xml
     dst: /usr/share/dbus-1/interfaces/io.github.karanshukla.vinoopeneffects.Daemon1.xml
   - src: data/dbus/io.github.karanshukla.vinoopeneffects.Effects1.xml
@@ -49,23 +31,14 @@ contents:
   - src: data/dbus/io.github.karanshukla.vinoopeneffects.Devices1.xml
     dst: /usr/share/dbus-1/interfaces/io.github.karanshukla.vinoopeneffects.Devices1.xml
 
-  # D-Bus session service activation (rendered with @bindir@ -> /usr/bin)
   - src: dist/io.github.karanshukla.vinoopeneffects.Daemon.service
     dst: /usr/share/dbus-1/services/io.github.karanshukla.vinoopeneffects.Daemon.service
 
-  # systemd user unit (rendered with @bindir@ -> /usr/bin)
   - src: dist/vinoopeneffects-daemon.service
     dst: /usr/lib/systemd/user/vinoopeneffects-daemon.service
 
-  # Bundled, sha256-verified ML models (staged by build-packages.sh).
-  # Daemon's registry::search_dirs() resolves /usr/share/vinoopeneffects/models.
-  #
-  # One glob entry per model id rather than a single `type: tree`: nfpm's tree
-  # walker writes the dirs' mode as the raw Go FileMode (mode=20000000755, with
-  # the ModeDir bit) instead of the masked 0755, which pacman 7.x flags as a
-  # permissions mismatch on every dir. Globbed files create their parent dir
-  # implicitly, and implicit dirs get a clean 0755 (no warning). Add a line here
-  # when a new model id is bundled.
+  # One glob per bundled model id, not `type: tree`: nfpm's tree walker writes raw Go FileMode
+  # dir modes that pacman 7.x flags as permission mismatches.
   - src: dist/models/hand_landmark/*
     dst: /usr/share/vinoopeneffects/models/hand_landmark/
   - src: dist/models/palm_detection/*

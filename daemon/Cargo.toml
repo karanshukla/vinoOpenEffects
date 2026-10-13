@@ -10,7 +10,6 @@ name = "vinoopeneffects-daemon"
 path = "src/main.rs"
 
 [features]
-# OpenVINO execution provider (NPU/GPU); see core's `npu` feature.
 default = ["npu"]
 npu = ["oe_core/npu"]
 

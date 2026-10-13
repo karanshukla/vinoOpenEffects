@@ -146,8 +146,8 @@ impl Engine {
     /// compiles for the provider), so callers run it without holding the
     /// frame lock and then [`replace`](Self::replace) the live engine.
     pub fn load(provider: &str, wanted: LoadedModels) -> anyhow::Result<Self> {
-        // Before loading: a stale "accelerator failed" memo from the old
-        // provider would otherwise pin `auto` to CPU.
+        // Reset first: a stale accelerator-failed memo from the old provider would pin `auto` to
+        // CPU.
         super::reset_accel_failed();
         let mut detail = None;
         let selfie = reload(
@@ -174,8 +174,6 @@ impl Engine {
             provider,
             &mut detail,
         )?;
-        // Auto light only runs on the NPU, so a provider it can't use turns it
-        // off (the lazy reload logs why) instead of failing the whole swap.
         let auto_light = reload(
             wanted.auto_light,
             AutoLight::load_with_provider,
@@ -396,7 +394,6 @@ mod tests {
         let fresh = Engine::load("cpu", eng.loaded()).expect("load on cpu");
         eng.replace(fresh);
         assert_eq!(eng.generation, 1);
-        // The new engine retries models the old one had given up on.
         assert!(!eng.selfie.failed && !eng.auto_light.failed);
         assert_eq!((eng.provider.as_str(), eng.active), ("cpu", "cpu"));
         eng.replace(Engine::load("cpu", eng.loaded()).unwrap());
