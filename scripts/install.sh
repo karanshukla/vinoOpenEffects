@@ -10,7 +10,6 @@
 # puts an onnxruntime in lib/vinoopeneffects/ort: the OpenVINO build (via
 # ovfetch) when an NPU/GPU is detected, the CPU build otherwise. The daemon uses
 # the NPU when present and falls back to CPU.
-# Packages are built separately (scripts/build-packages.sh).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

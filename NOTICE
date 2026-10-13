@@ -22,4 +22,4 @@ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 Bundled third-party models and their licenses (Apache-2.0 / MIT) are listed in
-data/models/*/manifest.toml and in docs/packaging.md.
+data/models/*/manifest.toml.

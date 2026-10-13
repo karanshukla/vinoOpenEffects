@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bump the workspace version everywhere it is hard-coded, sync Cargo.lock, then
-# commit and tag. Pushing the tag is left to you (it triggers the release CI).
+# commit and tag. Pushing the tag is left to you.
 #
 # Usage:
 #   ./scripts/bump-version.sh 0.2.0
