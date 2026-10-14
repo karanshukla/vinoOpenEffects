@@ -204,5 +204,12 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - run: rustc --version
+      - name: Fetch crates (retry on registry network errors)
+        run: |
+          for i in 1 2 3 4 5; do
+            cargo fetch --locked && exit 0
+            sleep $((i * 15))
+          done
+          exit 1
       - run: cargo build --workspace --locked
       - run: cargo test --workspace --locked
