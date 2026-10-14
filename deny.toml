@@ -3,12 +3,6 @@ all-features = false
 
 [advisories]
 version = 2
-# zbus_xml pins quick-xml 0.39 but only parses our own introspection XML at build time; drop once it
-# moves to quick-xml >= 0.41.
-ignore = [
-    { id = "RUSTSEC-2026-0194", reason = "build-time parse of trusted in-repo XML" },
-    { id = "RUSTSEC-2026-0195", reason = "build-time parse of trusted in-repo XML" },
-]
 
 [licenses]
 version = 2
