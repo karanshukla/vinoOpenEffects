@@ -20,7 +20,7 @@ publishes a **vinoOpenEffects Virtual Camera** in PipeWire that any app can pick
   down, heart or wave
 
 Nothing leaves the machine. The real camera only opens while an app is watching
-the virtual one. Wayland only.
+the virtual one. Wayland only. Forked from OpenEffects in order to add NPU support for better performance, lower battery drain and improved effects.
 
 ## Quick start
 
