@@ -1,13 +1,23 @@
 // Shared by the GUI and CLI build scripts through `include!`.
 
 /// The release shown by `--version` and the About dialog: `VINOOPENEFFECTS_VERSION`
-/// if set, else the checkout's exact `vN` release tag, else `dev`.
+/// if set, else the `VERSION` file a release's source bundle carries, else the
+/// checkout's exact `vN` release tag, else `dev`.
 fn release_version() -> String {
     use std::process::Command;
 
     println!("cargo:rerun-if-env-changed=VINOOPENEFFECTS_VERSION");
     if let Ok(v) = std::env::var("VINOOPENEFFECTS_VERSION")
         && !v.trim().is_empty()
+    {
+        return v.trim().to_string();
+    }
+
+    // The release workflow's source bundle has no .git, so it ships the tag in a file.
+    let version_file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../VERSION");
+    println!("cargo:rerun-if-changed={}", version_file.display());
+    if let Ok(v) = std::fs::read_to_string(&version_file)
+        && is_release_tag(v.trim())
     {
         return v.trim().to_string();
     }
@@ -34,6 +44,10 @@ fn release_version() -> String {
     }
 
     git(&["describe", "--tags", "--exact-match", "--match", "v[0-9]*", "HEAD"])
-        .filter(|tag| tag.len() > 1 && tag[1..].bytes().all(|b| b.is_ascii_digit()))
+        .filter(|tag| is_release_tag(tag))
         .unwrap_or_else(|| "dev".into())
+}
+
+fn is_release_tag(tag: &str) -> bool {
+    tag.len() > 1 && tag.starts_with('v') && tag[1..].bytes().all(|b| b.is_ascii_digit())
 }
