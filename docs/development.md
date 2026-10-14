@@ -121,12 +121,16 @@ scripts/release.sh                                         # from an up-to-date 
 ```
 
 `release.sh` refuses to tag until `CHANGELOG.md` on `main` has the new tag's
-section. A release is only a tag and a changelog entry: there is no release
-workflow and no packages yet, since vinoOpenEffects installs from source
-([install.md](install.md)). The crate version in `Cargo.toml` is not the
-release number and doesn't change with it. The version the GUI's About dialog
-and `vinoopeneffects-ctl --version` show comes from `buildinfo/version.rs` at
-build time: `VINOOPENEFFECTS_VERSION` if set, else the checkout's exact `vN`
+section. Pushing the tag runs `.github/workflows/release.yml`, which checks the
+tag is on `main` and has a changelog section, then publishes a GitHub Release
+with that section as its notes, a source bundle
+(`vinoopeneffects-vN-source.tar.gz`) and `SHA256SUMS`. There are no prebuilt
+binaries or packages yet, since vinoOpenEffects installs from source
+([install.md](install.md)). The bundle has no `.git`, so it carries a `VERSION`
+file that `buildinfo/version.rs` reads. The crate version in `Cargo.toml` is not
+the release number and doesn't change with it. The version the GUI's About
+dialog and `vinoopeneffects-ctl --version` show comes from
+`VINOOPENEFFECTS_VERSION` if set, else `VERSION`, else the checkout's exact `vN`
 tag, else `dev`.
 
 ### Changelog
