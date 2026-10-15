@@ -302,6 +302,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
@@ -360,6 +361,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
@@ -415,6 +417,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
@@ -483,6 +486,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(
             saw_eos,
             "pipeline did not reach EOS within timeout during hot swap"

@@ -1,6 +1,7 @@
 //! The set of lazily-loaded model sessions the effects run on. A provider swap
 //! builds a whole new [`Engine`] off the frame path and replaces the old one.
 
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tracing::warn;
@@ -161,6 +162,35 @@ impl LoadedModels {
     }
 }
 
+/// Background loads still running; exiting under one crashes inside onnxruntime.
+static IN_FLIGHT: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct InFlight;
+
+impl InFlight {
+    fn start() -> Self {
+        *IN_FLIGHT.0.lock().unwrap() += 1;
+        InFlight
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        *IN_FLIGHT.0.lock().unwrap() -= 1;
+        IN_FLIGHT.1.notify_all();
+    }
+}
+
+/// Block until no background load is running, or `timeout`; true if none is.
+pub fn wait_for_loads(timeout: Duration) -> bool {
+    let guard = IN_FLIGHT.0.lock().unwrap();
+    let (count, _) = IN_FLIGHT
+        .1
+        .wait_timeout_while(guard, timeout, |n| *n > 0)
+        .unwrap();
+    *count == 0
+}
+
 /// Models the frame path asked for in background mode, to load off its thread.
 #[derive(Debug)]
 pub struct LoadRequest {
@@ -173,6 +203,7 @@ impl LoadRequest {
     /// Compile the requested models. Slow; run it on its own thread, then hand
     /// the result to [`Engine::adopt`].
     pub fn run(self) -> Loaded {
+        let _in_flight = InFlight::start();
         let mut engine = Engine::with_provider(&self.provider);
         let m = self.models;
         if m.selfie {

@@ -210,6 +210,9 @@ async fn run() -> anyhow::Result<()> {
     }
     let _ = pipeline_tx.send(PipelineCommand::Shutdown).await;
     let _ = worker.join();
+    if !oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(5)) {
+        warn!("exiting with a model load still running");
+    }
     Ok(())
 }
 
