@@ -81,9 +81,19 @@ Denoise, measured 2026-10-15 on the same machine: about 2.1 ms median per
 
 Intel's `single-image-super-resolution-1032` and `-1033`, tried as an NPU
 upscale for Center Stage, measured 2026-10-15 on the same machine with
-`benchmark_app -d NPU -hint latency` (OpenVINO 2026.4.1): 42 ms and 65 ms
-median at their fixed 640×360 input. Each is over the 33 ms frame budget on its
-own, so Center Stage upscales bilinearly.
+`benchmark_app -hint latency` (OpenVINO 2026.4.1), median ms:
+
+| Model | Shape (in → out) | NPU | GPU | CPU |
+|---|---|---|---|---|
+| `-1032` (4×) | 480×270 → 1920×1080 (shipped) | 42 | 24 | 101 |
+| `-1032` (4×) | 320×180 → 1280×720 | 13.5 | 10 | |
+| `-1033` (3×) | 640×360 → 1920×1080 (shipped) | 65 | | |
+| `-1033` (3×) | 426×240 → 1278×720 | 29 | | |
+
+Both reshape on the NPU, but each shape is its own compile with a fixed scale.
+At a 720p output only `-1032` fits beside the other models, and its 320×180
+input is exactly the crop at Center Stage's 4× limit. At any lighter zoom the
+crop would be downscaled to feed it. Center Stage upscales bilinearly for now.
 
 ### Reproducing
 
