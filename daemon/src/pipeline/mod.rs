@@ -331,6 +331,7 @@ fn start_capture(
     capture: &mut Option<builder::BuiltCapture>,
 ) {
     match builder::build_capture_pipeline(app, fmt, Arc::clone(bridge)).and_then(|c| {
+        c.watch_inference(events.clone());
         c.start()?;
         Ok(c)
     }) {

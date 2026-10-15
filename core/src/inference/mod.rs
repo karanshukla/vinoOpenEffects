@@ -4,6 +4,8 @@ pub mod manifest;
 pub mod models;
 pub mod registry;
 
+pub use shared::npu_failure as failure;
+
 const INTRA_THREADS: usize = 2;
 
 use std::path::Path;
@@ -15,6 +17,54 @@ static ACCEL_FAILED: AtomicBool = AtomicBool::new(false);
 
 pub fn reset_accel_failed() {
     ACCEL_FAILED.store(false, Ordering::Relaxed);
+}
+
+const COMPILE_FIX: &str = "check the NPU driver and compiler with `ovfetch detect`, then run `vinoopeneffects-ctl inference --retry`";
+#[cfg(feature = "npu")]
+const RUNTIME_FIX: &str =
+    "run scripts/install.sh, which installs the OpenVINO onnxruntime with `ovfetch install`";
+
+fn fingerprint() -> failure::Fingerprint {
+    failure::current(loaded_runtime())
+}
+
+/// Why `auto` skips the NPU: a compile failure recorded on this driver and runtime.
+fn recorded_failure() -> Option<String> {
+    let record = failure::read(&failure::default_path()?, &fingerprint())?;
+    Some(format!(
+        "NPU skipped after an earlier failure ({}); run `vinoopeneffects-ctl inference --retry` to try it again",
+        record.reason
+    ))
+}
+
+fn remember_failure(reason: &str) {
+    let Some(path) = failure::default_path() else {
+        return;
+    };
+    let record = failure::Record {
+        device: "npu".into(),
+        reason: reason.into(),
+        fingerprint: fingerprint(),
+    };
+    if let Err(err) = failure::write(&path, &record) {
+        tracing::warn!(%err, path = %path.display(), "could not save the NPU failure record");
+    }
+}
+
+/// Forget every NPU failure, in this process and on disk; true if one was recorded.
+pub fn forget_failures() -> bool {
+    let was_failed = ACCEL_FAILED.swap(false, Ordering::Relaxed);
+    let on_disk = failure::default_path().is_some_and(|p| failure::clear(&p));
+    was_failed || on_disk
+}
+
+/// An NPU exists but `active` isn't it, for a provider that would use it.
+pub fn degraded(provider: &str, active: &str) -> bool {
+    degraded_on(npu_present(), provider, active)
+}
+
+fn degraded_on(npu_present: bool, provider: &str, active: &str) -> bool {
+    npu_present && matches!(provider, "auto" | "npu") && active != "npu"
 }
 
 #[derive(Debug, Clone)]
@@ -42,7 +92,9 @@ pub fn probe_npu() -> NpuProbe {
     if !ep.is_available().unwrap_or(false) {
         return NpuProbe {
             available: false,
-            reason: Some("onnxruntime has no OpenVINO execution provider".into()),
+            reason: Some(format!(
+                "onnxruntime has no OpenVINO execution provider; {RUNTIME_FIX}"
+            )),
         };
     }
     NpuProbe {
@@ -89,15 +141,37 @@ pub fn effective_ep(configured: &str) -> String {
 }
 
 /// The provider models will land on for `provider` before any is loaded, plus
-/// why it differs from the request (an `npu` request with no usable NPU).
+/// why it isn't the NPU when one exists.
 pub fn predicted_active(provider: &str) -> (&'static str, Option<String>) {
-    let probe = probe_npu_cached();
     match provider {
-        "npu" | "auto" if probe.available => ("npu", None),
-        "npu" => ("cpu", probe.reason.clone()),
+        "npu" | "auto" => match npu_blocker(provider) {
+            None => ("npu", None),
+            Some(reason) => ("cpu", reason),
+        },
         "gpu" => ("gpu", None),
         _ => ("cpu", None),
     }
+}
+
+/// `None` if `provider` (`auto` or `npu`) should try the NPU, else why not:
+/// `Some(None)` when there is simply no NPU and `auto` shouldn't mention it.
+fn npu_blocker(provider: &str) -> Option<Option<String>> {
+    let probe = probe_npu_cached();
+    if !probe.available {
+        let quiet = provider == "auto" && !npu_present();
+        return Some(if quiet { None } else { probe.reason.clone() });
+    }
+    if provider == "auto" {
+        if ACCEL_FAILED.load(Ordering::Relaxed) {
+            return Some(Some(format!(
+                "NPU failed earlier in this run; {COMPILE_FIX}"
+            )));
+        }
+        if let Some(reason) = recorded_failure() {
+            return Some(Some(reason));
+        }
+    }
+    None
 }
 
 /// A session builder with the shared CPU settings and no accelerator attached.
@@ -134,10 +208,11 @@ pub struct LoadedSession {
 }
 
 /// Load `model` on the requested execution provider (`auto`, `cpu`, `npu`, `gpu`).
-/// In `auto` mode, an NPU compile failure falls back to CPU. An explicit `npu`
-/// with no usable NPU runs on CPU and reports why in `fallback` (the request is
-/// kept, so it takes effect once the NPU is there); an NPU that is present but
-/// fails to compile the model is an error, as is any explicit `gpu` failure.
+/// `auto` and `npu` fall back to CPU when the NPU is missing or fails to compile
+/// the model, and say why in `fallback`; a compile failure is remembered so
+/// `auto` skips the NPU until `--retry` or a driver or runtime change. An
+/// explicit `npu` always tries, and a success clears the record. Only `gpu`
+/// fails outright.
 pub fn load_session(model: &Path, provider: &str) -> anyhow::Result<LoadedSession> {
     use anyhow::Context;
     let load = |mut builder: ort::session::builder::SessionBuilder| {
@@ -145,33 +220,17 @@ pub fn load_session(model: &Path, provider: &str) -> anyhow::Result<LoadedSessio
             .commit_from_file(model)
             .with_context(|| format!("load {}", model.display()))
     };
+    let on_cpu = |fallback: Option<String>| {
+        Ok(LoadedSession {
+            session: load(base_builder()?)?,
+            active_ep: "cpu",
+            fallback,
+        })
+    };
 
     let target = provider.trim().to_ascii_lowercase();
     match target.as_str() {
-        "cpu" => {
-            let session = load(base_builder()?)?;
-            Ok(LoadedSession {
-                session,
-                active_ep: "cpu",
-                fallback: None,
-            })
-        }
-        "npu" if !probe_npu_cached().available => {
-            let session = load(base_builder()?)?;
-            Ok(LoadedSession {
-                session,
-                active_ep: "cpu",
-                fallback: probe_npu_cached().reason.clone(),
-            })
-        }
-        "npu" => {
-            let session = load(build_session("npu")?)?;
-            Ok(LoadedSession {
-                session,
-                active_ep: "npu",
-                fallback: None,
-            })
-        }
+        "cpu" => on_cpu(None),
         "gpu" => {
             let session = load(build_session("gpu")?)?;
             Ok(LoadedSession {
@@ -180,36 +239,36 @@ pub fn load_session(model: &Path, provider: &str) -> anyhow::Result<LoadedSessio
                 fallback: None,
             })
         }
-        "auto" => {
-            if !ACCEL_FAILED.load(Ordering::Relaxed) && probe_npu_cached().available {
-                match build_session("npu").and_then(load) {
-                    Ok(session) => {
-                        return Ok(LoadedSession {
-                            session,
-                            active_ep: "npu",
-                            fallback: None,
-                        });
+        "auto" | "npu" => {
+            if let Some(reason) = npu_blocker(&target) {
+                return on_cpu(reason);
+            }
+            match build_session("npu").and_then(load) {
+                Ok(session) => {
+                    if target == "npu" && forget_failures() {
+                        tracing::info!(
+                            "NPU compiled on an explicit request; cleared the failure record"
+                        );
                     }
-                    Err(err) => {
-                        let msg = format!("NPU compile failed for {}: {err}", model.display());
-                        if !ACCEL_FAILED.swap(true, Ordering::Relaxed) {
-                            tracing::warn!("{msg}; falling back to CPU");
-                        }
-                        let session = load(base_builder()?)?;
-                        return Ok(LoadedSession {
-                            session,
-                            active_ep: "cpu",
-                            fallback: Some(msg),
-                        });
+                    Ok(LoadedSession {
+                        session,
+                        active_ep: "npu",
+                        fallback: None,
+                    })
+                }
+                Err(err) => {
+                    let name = model
+                        .file_name()
+                        .unwrap_or(model.as_os_str())
+                        .to_string_lossy();
+                    let reason = format!("NPU compile failed for {name}: {err:#}");
+                    if !ACCEL_FAILED.swap(true, Ordering::Relaxed) {
+                        tracing::error!("{reason}; running on CPU. {COMPILE_FIX}");
+                        remember_failure(&reason);
                     }
+                    on_cpu(Some(format!("{reason}; {COMPILE_FIX}")))
                 }
             }
-            let session = load(base_builder()?)?;
-            Ok(LoadedSession {
-                session,
-                active_ep: "cpu",
-                fallback: None,
-            })
         }
         other => {
             anyhow::bail!("unknown execution provider '{other}': expected auto, cpu, npu or gpu")
@@ -222,7 +281,6 @@ pub fn load_session(model: &Path, provider: &str) -> anyhow::Result<LoadedSessio
 #[cfg(feature = "npu")]
 pub fn load_session_npu(model: &Path, provider: &str) -> anyhow::Result<LoadedSession> {
     use anyhow::Context;
-    use ort::ep::{ExecutionProvider, OpenVINO};
 
     let target = provider.trim().to_ascii_lowercase();
     anyhow::ensure!(
@@ -235,16 +293,7 @@ pub fn load_session_npu(model: &Path, provider: &str) -> anyhow::Result<LoadedSe
         "NPU unavailable: {}",
         probe.reason.as_deref().unwrap_or("unknown reason")
     );
-    ensure_runtime()?;
-    let ep = OpenVINO::default().with_device_type("NPU");
-    anyhow::ensure!(
-        ep.is_available().unwrap_or(false),
-        "onnxruntime has no OpenVINO execution provider"
-    );
-    let mut builder = base_builder()?
-        .with_execution_providers([ep.build().error_on_failure()])
-        .map_err(|e| anyhow::anyhow!("register OpenVINO EP (NPU): {e}"))?;
-    let session = builder
+    let session = build_session("npu")?
         .commit_from_file(model)
         .with_context(|| format!("load {} on the NPU", model.display()))?;
     Ok(LoadedSession {
@@ -319,6 +368,7 @@ pub(crate) fn ensure_runtime() -> anyhow::Result<()> {
             Ok(builder) => {
                 builder.commit();
                 tracing::info!(runtime = %path.display(), "loaded onnxruntime");
+                let _ = LOADED_RUNTIME.set(path.clone());
                 Ok(path)
             }
             Err(e) => Err(format!(
@@ -332,6 +382,28 @@ pub(crate) fn ensure_runtime() -> anyhow::Result<()> {
         .as_ref()
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+#[cfg(feature = "npu")]
+static LOADED_RUNTIME: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// The onnxruntime library this process loaded, if any.
+#[cfg(feature = "npu")]
+fn loaded_runtime() -> Option<&'static Path> {
+    LOADED_RUNTIME.get().map(std::path::PathBuf::as_path)
+}
+
+#[cfg(not(feature = "npu"))]
+fn loaded_runtime() -> Option<&'static Path> {
+    None
+}
+
+/// Where OpenVINO keeps compiled blobs, so later starts skip the NPU compile.
+#[cfg(feature = "npu")]
+fn compile_cache_dir() -> Option<String> {
+    let dir = dirs::cache_dir()?.join("vinoopeneffects/openvino");
+    std::fs::create_dir_all(&dir).ok()?;
+    dir.to_str().map(str::to_owned)
 }
 
 #[cfg(not(feature = "npu"))]
@@ -369,7 +441,10 @@ fn with_execution_provider(
             anyhow::bail!("unknown execution provider '{other}': expected auto, cpu, npu or gpu")
         }
     };
-    let ep = OpenVINO::default().with_device_type(device);
+    let mut ep = OpenVINO::default().with_device_type(device);
+    if let Some(dir) = compile_cache_dir() {
+        ep = ep.with_cache_dir(dir);
+    }
     if !ep.is_available().unwrap_or(false) {
         anyhow::ensure!(
             !strict,
@@ -397,5 +472,24 @@ fn with_execution_provider(
     match requested {
         "cpu" | "auto" => Ok(builder),
         other => anyhow::bail!("execution provider '{other}' needs a build with --features npu"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn degraded_means_an_npu_exists_and_is_not_used() {
+        assert!(!degraded_on(false, "auto", "cpu"), "no NPU is just CPU");
+        assert!(!degraded_on(false, "npu", "cpu"));
+        assert!(degraded_on(true, "auto", "cpu"));
+        assert!(degraded_on(true, "npu", "mixed"));
+        assert!(!degraded_on(true, "auto", "npu"));
+        assert!(
+            !degraded_on(true, "cpu", "cpu"),
+            "an explicit cpu is never degraded"
+        );
+        assert!(!degraded_on(true, "gpu", "gpu"));
     }
 }

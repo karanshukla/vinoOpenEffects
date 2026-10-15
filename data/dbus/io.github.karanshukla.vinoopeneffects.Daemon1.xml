@@ -18,6 +18,12 @@
       <arg name="provider" type="s" direction="in" />
     </method>
 
+    <!-- Forget recorded NPU compile failures and reload the models on the
+        current provider. Returns whether a failure was recorded. -->
+    <method name="RetryInference">
+      <arg name="cleared" type="b" direction="out" />
+    </method>
+
     <!-- "running" | "idle" | "error" | "stopped". Changes are announced via the
         StatusChanged signal below, not org.freedesktop.DBus.Properties.PropertiesChanged
         (avoids a receive_status_changed naming collision in generated proxies). -->
@@ -26,7 +32,8 @@
     </property>
 
     <!-- models_ready, output_sink, virtual_camera, error, inference_requested,
-        inference_active, inference_available, inference_detail -->
+        inference_active, inference_available, inference_detail,
+        inference_degraded (b: an NPU exists but the models aren't all on it) -->
     <property name="Capabilities" type="a{sv}" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="false" />
     </property>

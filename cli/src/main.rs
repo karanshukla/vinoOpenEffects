@@ -47,6 +47,9 @@ enum Command {
     Inference {
         /// Target provider (auto, cpu, npu). If omitted, displays current provider info.
         provider: Option<String>,
+        /// Forget recorded NPU failures and reload the models.
+        #[arg(long, conflicts_with = "provider")]
+        retry: bool,
         /// Emit machine-readable JSON.
         #[arg(long)]
         json: bool,
@@ -331,7 +334,11 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Status { json, short } => status(&conn, json, short).await?,
-        Command::Inference { provider, json } => inference(&conn, provider, json).await?,
+        Command::Inference {
+            provider,
+            retry,
+            json,
+        } => inference(&conn, provider, retry, json).await?,
         Command::Start => {
             daemon_proxy(&conn)
                 .await?
@@ -601,6 +608,10 @@ async fn status(conn: &Connection, json: bool, short: bool) -> anyhow::Result<()
         _ => "missing",
     };
     let sink = simple_value(&caps, "output_sink").unwrap_or_else(|| "unknown".into());
+    let degraded = caps
+        .get("inference_degraded")
+        .and_then(value_as_bool)
+        .unwrap_or(false);
     if json {
         let requested = simple_value(&caps, "inference_requested");
         let available = caps
@@ -614,6 +625,7 @@ async fn status(conn: &Connection, json: bool, short: bool) -> anyhow::Result<()
                 "inference": inference,
                 "inference_requested": requested,
                 "inference_available": available,
+                "inference_degraded": degraded,
                 "inference_detail": detail,
                 "models": models,
                 "sink": sink,
@@ -621,12 +633,34 @@ async fn status(conn: &Connection, json: bool, short: bool) -> anyhow::Result<()
         );
     } else {
         println!("{status} (inference: {inference}, models: {models}, sink: {sink})");
+        if degraded {
+            let why = simple_value(&caps, "inference_detail").unwrap_or_default();
+            println!("warning: an NPU is present but effects run on {inference}: {why}");
+        }
     }
     Ok(())
 }
 
-async fn inference(conn: &Connection, provider: Option<String>, json: bool) -> anyhow::Result<()> {
+async fn inference(
+    conn: &Connection,
+    provider: Option<String>,
+    retry: bool,
+    json: bool,
+) -> anyhow::Result<()> {
     let daemon = daemon_proxy(conn).await?;
+    if retry {
+        let cleared: bool = daemon.call("RetryInference", &()).await?;
+        if !json {
+            println!(
+                "{}",
+                if cleared {
+                    "cleared the NPU failure record; reloading"
+                } else {
+                    "no NPU failure recorded; reloading"
+                }
+            );
+        }
+    }
     if let Some(target) = provider {
         daemon
             .call::<_, _, ()>("SetInferenceProvider", &(target.as_str()))
@@ -643,6 +677,10 @@ async fn inference(conn: &Connection, provider: Option<String>, json: bool) -> a
         .and_then(shared::dbus::value_as_str_array)
         .unwrap_or_else(|| vec!["cpu".into()]);
     let detail = simple_value(&caps, "inference_detail");
+    let degraded = caps
+        .get("inference_degraded")
+        .and_then(value_as_bool)
+        .unwrap_or(false);
 
     if json {
         println!(
@@ -651,12 +689,20 @@ async fn inference(conn: &Connection, provider: Option<String>, json: bool) -> a
                 "requested": requested,
                 "active": active,
                 "available": available,
+                "degraded": degraded,
                 "detail": detail,
             })
         );
     } else {
         println!("requested: {requested}");
-        println!("active:    {active}");
+        println!(
+            "active:    {active}{}",
+            if degraded {
+                " (degraded: an NPU is present but unused)"
+            } else {
+                ""
+            }
+        );
         println!("available: {}", available.join(", "));
         if let Some(d) = detail {
             println!("detail:    {d}");

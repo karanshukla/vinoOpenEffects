@@ -126,6 +126,20 @@ pub fn apply_app_state_to_elements(effects: &gst::Element, app: &AppState) {
     effects.set_property("reactions-enabled", app.effects.reactions.enabled && active);
 }
 
+/// The models the effects [`apply_app_state_to_elements`] enables will ask for.
+pub fn wanted_models(app: &AppState) -> oe_core::inference::engine::LoadedModels {
+    let fx = &app.effects;
+    let on = |enabled: bool| enabled && !app.bypass;
+    let reactions = on(fx.reactions.enabled);
+    oe_core::inference::engine::LoadedModels {
+        selfie: on(fx.portrait_blur.enabled || fx.bg_replace.enabled || fx.studio_light.enabled),
+        yunet: on(fx.center_stage.enabled) && fx.center_stage.zoom != "off",
+        palm: reactions,
+        hand: reactions,
+        auto_light: on(fx.studio_light.enabled && fx.studio_light.auto_light),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,6 +302,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
@@ -346,6 +361,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
@@ -401,6 +417,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
@@ -469,6 +486,7 @@ mod tests {
             }
         }
         pipeline.set_state(gst::State::Null).unwrap();
+        oe_core::inference::engine::wait_for_loads(std::time::Duration::from_secs(30));
         assert!(
             saw_eos,
             "pipeline did not reach EOS within timeout during hot swap"

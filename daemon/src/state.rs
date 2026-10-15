@@ -83,6 +83,10 @@ impl DaemonState {
         oe_core::inference::effective_ep(self.app.inference.provider.as_str())
     }
 
+    pub fn inference_degraded(&self) -> bool {
+        oe_core::inference::degraded(&self.requested_inference_provider(), &self.inference_active)
+    }
+
     pub fn capabilities(&self) -> VariantMap {
         let mut values = VariantMap::new();
         values.insert("models_ready".into(), bool_value(self.models_ready));
@@ -100,6 +104,10 @@ impl DaemonState {
             str_value(self.requested_inference_provider()),
         );
         values.insert("inference_active".into(), str_value(&self.inference_active));
+        values.insert(
+            "inference_degraded".into(),
+            bool_value(self.inference_degraded()),
+        );
         values.insert(
             "inference_available".into(),
             shared::dbus::str_array_value(&oe_core::inference::available_providers()),
@@ -424,6 +432,11 @@ mod tests {
         assert!(avail.is_some());
         let avail = avail.unwrap();
         assert!(avail.contains(&"cpu".to_string()));
+        assert!(
+            caps.get("inference_degraded")
+                .and_then(value_as_bool)
+                .is_some()
+        );
     }
 
     #[test]
@@ -448,6 +461,11 @@ mod tests {
             Some("cpu")
         );
         assert!(!caps.contains_key("inference_detail"));
+        assert_eq!(
+            caps.get("inference_degraded").and_then(value_as_bool),
+            Some(false),
+            "an explicit cpu is never degraded"
+        );
     }
 
     #[test]

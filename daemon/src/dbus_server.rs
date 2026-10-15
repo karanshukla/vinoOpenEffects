@@ -100,6 +100,21 @@ impl Daemon1Iface {
         Ok(())
     }
 
+    /// Forget recorded NPU failures and reload the models on the current provider.
+    async fn retry_inference(&self) -> fdo::Result<bool> {
+        let cleared = oe_core::inference::forget_failures();
+        let provider = {
+            let mut state = self.state.write().await;
+            let _ = state.sync_inference_from_config();
+            state.app.inference.provider
+        };
+        self.pipeline_tx
+            .send(PipelineCommand::SetInferenceProvider(provider))
+            .await
+            .map_err(|err| fdo::Error::Failed(err.to_string()))?;
+        Ok(cleared)
+    }
+
     #[zbus(property)]
     async fn status(&self) -> String {
         self.state.read().await.status.as_str().into()

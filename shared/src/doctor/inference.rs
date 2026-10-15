@@ -57,6 +57,31 @@ pub fn ort_library_verdict(resolved: Option<&Path>, has_openvino: bool) -> Check
     }
 }
 
+pub fn npu_failure_verdict(record: Option<&crate::npu_failure::Record>) -> Check {
+    match record {
+        None => Check::new(
+            "inference",
+            "npu-failure",
+            Status::Ok,
+            "no NPU compile failure recorded",
+            None,
+        ),
+        Some(r) => Check::new(
+            "inference",
+            "npu-failure",
+            Status::Warn,
+            format!("auto skips the NPU after a recorded failure: {}", r.reason),
+            Some("check the NPU driver and compiler with `ovfetch detect`, then run `vinoopeneffects-ctl inference --retry`".into()),
+        ),
+    }
+}
+
+/// The recorded NPU failure, if it was made on this driver and `ort_lib`'s runtime.
+pub fn probe_npu_failure(ort_lib: Option<&Path>) -> Option<crate::npu_failure::Record> {
+    use crate::npu_failure as failure;
+    failure::read(&failure::default_path()?, &failure::current(ort_lib))
+}
+
 pub fn npu_hardware_verdict(accel_count: usize) -> Check {
     if accel_count > 0 {
         Check::new(
@@ -122,6 +147,20 @@ pub fn probe_npu_devices() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npu_failure_verdict_warns_with_the_retry_command() {
+        assert_eq!(npu_failure_verdict(None).status, Status::Ok);
+        let record = crate::npu_failure::Record {
+            device: "npu".into(),
+            reason: "NPU compile failed for yunet.onnx".into(),
+            fingerprint: Default::default(),
+        };
+        let check = npu_failure_verdict(Some(&record));
+        assert_eq!(check.status, Status::Warn);
+        assert!(check.detail.contains("yunet.onnx"));
+        assert!(check.fix.as_deref().unwrap().contains("inference --retry"));
+    }
 
     #[test]
     fn test_build_feature_verdict() {

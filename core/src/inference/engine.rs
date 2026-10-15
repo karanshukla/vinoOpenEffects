@@ -1,6 +1,7 @@
 //! The set of lazily-loaded model sessions the effects run on. A provider swap
 //! builds a whole new [`Engine`] off the frame path and replaces the old one.
 
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tracing::warn;
@@ -15,6 +16,8 @@ struct Slot<T> {
     model: Option<T>,
     active_ep: Option<&'static str>,
     failed: bool,
+    /// Queued for, or being loaded by, a background loader.
+    loading: bool,
     used: Instant,
 }
 
@@ -24,12 +27,54 @@ impl<T> Default for Slot<T> {
             model: None,
             active_ep: None,
             failed: false,
+            loading: false,
             used: Instant::now(),
         }
     }
 }
 
+/// What a model accessor did with an empty slot.
+#[derive(PartialEq)]
+enum Touch {
+    Nothing,
+    Loaded,
+    Queued,
+}
+
 impl<T> Slot<T> {
+    /// Load an empty slot now, or in background mode queue it and return.
+    fn touch(
+        &mut self,
+        background: bool,
+        provider: &str,
+        load: impl FnOnce(&str) -> anyhow::Result<(T, &'static str, Option<String>)>,
+        unavailable: &str,
+        fallback_out: &mut Option<String>,
+    ) -> Touch {
+        if self.model.is_some() || self.failed || self.loading {
+            return Touch::Nothing;
+        }
+        if background {
+            self.loading = true;
+            return Touch::Queued;
+        }
+        self.ensure_loaded(provider, load, unavailable, fallback_out);
+        Touch::Loaded
+    }
+
+    /// Take a background load's result into a slot still waiting for it.
+    fn adopt(&mut self, from: Slot<T>) -> bool {
+        if !self.loading {
+            return false;
+        }
+        self.model = from.model;
+        self.active_ep = from.active_ep;
+        self.failed = from.failed;
+        self.loading = false;
+        self.used = Instant::now();
+        true
+    }
+
     fn ensure_loaded(
         &mut self,
         provider: &str,
@@ -100,14 +145,106 @@ impl<T> Slot<T> {
     }
 }
 
-/// Which models an [`Engine`] has loaded, so a replacement loads the same set.
-#[derive(Debug, Clone, Copy, Default)]
+/// A set of models: which an [`Engine`] has loaded, so a replacement loads the
+/// same set, or which a background load or warm-up should compile.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct LoadedModels {
-    selfie: bool,
-    yunet: bool,
-    palm: bool,
-    hand: bool,
-    auto_light: bool,
+    pub selfie: bool,
+    pub yunet: bool,
+    pub palm: bool,
+    pub hand: bool,
+    pub auto_light: bool,
+}
+
+impl LoadedModels {
+    pub fn any(&self) -> bool {
+        self.selfie || self.yunet || self.palm || self.hand || self.auto_light
+    }
+}
+
+/// Background loads still running; exiting under one crashes inside onnxruntime.
+static IN_FLIGHT: (Mutex<usize>, Condvar) = (Mutex::new(0), Condvar::new());
+
+struct InFlight;
+
+impl InFlight {
+    fn start() -> Self {
+        *IN_FLIGHT.0.lock().unwrap() += 1;
+        InFlight
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        *IN_FLIGHT.0.lock().unwrap() -= 1;
+        IN_FLIGHT.1.notify_all();
+    }
+}
+
+/// Block until no background load is running, or `timeout`; true if none is.
+pub fn wait_for_loads(timeout: Duration) -> bool {
+    let guard = IN_FLIGHT.0.lock().unwrap();
+    let (count, _) = IN_FLIGHT
+        .1
+        .wait_timeout_while(guard, timeout, |n| *n > 0)
+        .unwrap();
+    *count == 0
+}
+
+/// Models the frame path asked for in background mode, to load off its thread.
+#[derive(Debug)]
+pub struct LoadRequest {
+    pub provider: String,
+    pub generation: u64,
+    pub models: LoadedModels,
+}
+
+impl LoadRequest {
+    /// Compile the requested models. Slow; run it on its own thread, then hand
+    /// the result to [`Engine::adopt`].
+    pub fn run(self) -> Loaded {
+        let _in_flight = InFlight::start();
+        let mut engine = Engine::with_provider(&self.provider);
+        let m = self.models;
+        if m.selfie {
+            let _ = engine.selfie();
+        }
+        if m.yunet {
+            let _ = engine.yunet();
+        }
+        if m.palm {
+            let _ = engine.palm();
+        }
+        if m.hand {
+            let _ = engine.hand();
+        }
+        if m.auto_light {
+            let _ = engine.auto_light();
+        }
+        engine.prime();
+        Loaded {
+            generation: self.generation,
+            engine,
+        }
+    }
+}
+
+/// A background load's result, for the engine generation that asked for it.
+pub struct Loaded {
+    generation: u64,
+    engine: Engine,
+}
+
+/// Compile `models` on `provider` and drop them, so OpenVINO's compile cache
+/// and the failure record are ready before the first frame needs them.
+pub fn warm(provider: &str, models: LoadedModels) -> (&'static str, Option<String>) {
+    let loaded = LoadRequest {
+        provider: provider.to_owned(),
+        generation: 0,
+        models,
+    }
+    .run();
+    (loaded.engine.active, loaded.engine.detail)
 }
 
 pub struct Engine {
@@ -115,6 +252,10 @@ pub struct Engine {
     pub provider: String,
     pub active: &'static str,
     pub detail: Option<String>,
+    /// Queue model loads for [`take_request`](Self::take_request) instead of
+    /// compiling on the caller's (frame) thread.
+    pub background: bool,
+    queued: LoadedModels,
     selfie: Slot<SelfieSeg>,
     yunet: Slot<YuNet>,
     palm: Slot<PalmDetector>,
@@ -124,12 +265,19 @@ pub struct Engine {
 
 impl Default for Engine {
     fn default() -> Self {
-        let requested = super::requested_ep();
+        Self::with_provider(&super::requested_ep())
+    }
+}
+
+impl Engine {
+    fn with_provider(provider: &str) -> Self {
         let mut eng = Self {
             generation: 0,
-            provider: requested,
+            provider: provider.to_owned(),
             active: "cpu",
             detail: None,
+            background: false,
+            queued: LoadedModels::default(),
             selfie: Slot::default(),
             yunet: Slot::default(),
             palm: Slot::default(),
@@ -139,9 +287,42 @@ impl Default for Engine {
         eng.update_active_status();
         eng
     }
-}
 
-impl Engine {
+    /// An NPU exists but these models aren't (all) on it.
+    pub fn degraded(&self) -> bool {
+        super::degraded(&self.provider, self.active)
+    }
+
+    /// The models queued since the last call, to load with [`LoadRequest::run`].
+    pub fn take_request(&mut self) -> Option<LoadRequest> {
+        let models = std::mem::take(&mut self.queued);
+        models.any().then(|| LoadRequest {
+            provider: self.provider.clone(),
+            generation: self.generation,
+            models,
+        })
+    }
+
+    /// Install a background load's models; false if a provider swap made it stale.
+    pub fn adopt(&mut self, loaded: Loaded) -> bool {
+        if loaded.generation != self.generation {
+            return false;
+        }
+        let from = loaded.engine;
+        let mut any = self.selfie.adopt(from.selfie);
+        any |= self.yunet.adopt(from.yunet);
+        any |= self.palm.adopt(from.palm);
+        any |= self.hand.adopt(from.hand);
+        any |= self.auto_light.adopt(from.auto_light);
+        if any {
+            if from.detail.is_some() {
+                self.detail = from.detail;
+            }
+            self.update_active_status();
+        }
+        any
+    }
+
     /// Load `wanted` on `provider` into a fresh engine. Slow (each model
     /// compiles for the provider), so callers run it without holding the
     /// frame lock and then [`replace`](Self::replace) the live engine.
@@ -187,6 +368,8 @@ impl Engine {
             provider: provider.to_string(),
             active: "cpu",
             detail,
+            background: false,
+            queued: LoadedModels::default(),
             selfie: Slot::preloaded(selfie),
             yunet: Slot::preloaded(yunet),
             palm: Slot::preloaded(palm),
@@ -194,7 +377,36 @@ impl Engine {
             auto_light: Slot::preloaded(auto_light),
         };
         eng.update_active_status();
+        eng.prime();
         Ok(eng)
+    }
+
+    /// Run each loaded model once on a blank frame. OpenVINO compiles for the
+    /// NPU on the first run, not at load (365 ms cold here), so this keeps that
+    /// off the frame thread.
+    fn prime(&mut self) {
+        const S: usize = 64;
+        let blank = vec![0u8; S * S * 4];
+        if let Some(m) = self.selfie.model.as_mut() {
+            let _ = m.segment(&blank, S, S, S * 4);
+        }
+        if let Some(m) = self.yunet.model.as_mut() {
+            let _ = m.detect(&blank, S, S, S * 4, 1.0);
+        }
+        if let Some(m) = self.palm.model.as_mut() {
+            let _ = m.detect(&blank, S, S, S * 4, 1.0);
+        }
+        if let Some(m) = self.hand.model.as_mut() {
+            let crop = super::hand::CropBox {
+                cx: 0.5,
+                cy: 0.5,
+                side: 1.0,
+            };
+            let _ = m.infer(&blank, S, S, S * 4, crop);
+        }
+        if let Some(m) = self.auto_light.model.as_mut() {
+            let _ = m.analyze(&blank, S, S, S * 4);
+        }
     }
 
     pub fn loaded(&self) -> LoadedModels {
@@ -211,8 +423,10 @@ impl Engine {
     /// after `next` was built is dropped with it and reloads lazily.
     pub fn replace(&mut self, next: Engine) {
         let generation = self.generation + 1;
+        let background = self.background;
         *self = next;
         self.generation = generation;
+        self.background = background;
         super::reset_accel_failed();
     }
 
@@ -239,86 +453,106 @@ impl Engine {
     }
 
     pub fn selfie(&mut self) -> Option<&mut SelfieSeg> {
-        if self.selfie.model.is_none() && !self.selfie.failed {
-            let mut fb = None;
-            self.selfie.ensure_loaded(
-                &self.provider,
-                SelfieSeg::load_with_provider,
-                "selfie segmentation unavailable; portrait blur / bg replace disabled",
-                &mut fb,
-            );
-            if let Some(f) = fb {
-                self.detail = Some(f);
+        let mut fb = None;
+        match self.selfie.touch(
+            self.background,
+            &self.provider,
+            SelfieSeg::load_with_provider,
+            "selfie segmentation unavailable; portrait blur / bg replace disabled",
+            &mut fb,
+        ) {
+            Touch::Nothing => {}
+            Touch::Queued => self.queued.selfie = true,
+            Touch::Loaded => {
+                if fb.is_some() {
+                    self.detail = fb;
+                }
+                self.update_active_status();
             }
-            self.update_active_status();
         }
         self.selfie.as_mut()
     }
 
     pub fn yunet(&mut self) -> Option<&mut YuNet> {
-        if self.yunet.model.is_none() && !self.yunet.failed {
-            let mut fb = None;
-            self.yunet.ensure_loaded(
-                &self.provider,
-                YuNet::load_with_provider,
-                "yunet unavailable; center stage cannot track a subject",
-                &mut fb,
-            );
-            if let Some(f) = fb {
-                self.detail = Some(f);
+        let mut fb = None;
+        match self.yunet.touch(
+            self.background,
+            &self.provider,
+            YuNet::load_with_provider,
+            "yunet unavailable; center stage cannot track a subject",
+            &mut fb,
+        ) {
+            Touch::Nothing => {}
+            Touch::Queued => self.queued.yunet = true,
+            Touch::Loaded => {
+                if fb.is_some() {
+                    self.detail = fb;
+                }
+                self.update_active_status();
             }
-            self.update_active_status();
         }
         self.yunet.as_mut()
     }
 
     pub fn palm(&mut self) -> Option<&mut PalmDetector> {
-        if self.palm.model.is_none() && !self.palm.failed {
-            let mut fb = None;
-            self.palm.ensure_loaded(
-                &self.provider,
-                PalmDetector::load_with_provider,
-                "palm detection unavailable; gesture reactions disabled",
-                &mut fb,
-            );
-            if let Some(f) = fb {
-                self.detail = Some(f);
+        let mut fb = None;
+        match self.palm.touch(
+            self.background,
+            &self.provider,
+            PalmDetector::load_with_provider,
+            "palm detection unavailable; gesture reactions disabled",
+            &mut fb,
+        ) {
+            Touch::Nothing => {}
+            Touch::Queued => self.queued.palm = true,
+            Touch::Loaded => {
+                if fb.is_some() {
+                    self.detail = fb;
+                }
+                self.update_active_status();
             }
-            self.update_active_status();
         }
         self.palm.as_mut()
     }
 
     pub fn hand(&mut self) -> Option<&mut HandLandmarker> {
-        if self.hand.model.is_none() && !self.hand.failed {
-            let mut fb = None;
-            self.hand.ensure_loaded(
-                &self.provider,
-                HandLandmarker::load_with_provider,
-                "hand landmark model unavailable; gesture reactions disabled",
-                &mut fb,
-            );
-            if let Some(f) = fb {
-                self.detail = Some(f);
+        let mut fb = None;
+        match self.hand.touch(
+            self.background,
+            &self.provider,
+            HandLandmarker::load_with_provider,
+            "hand landmark model unavailable; gesture reactions disabled",
+            &mut fb,
+        ) {
+            Touch::Nothing => {}
+            Touch::Queued => self.queued.hand = true,
+            Touch::Loaded => {
+                if fb.is_some() {
+                    self.detail = fb;
+                }
+                self.update_active_status();
             }
-            self.update_active_status();
         }
         self.hand.as_mut()
     }
 
     pub fn auto_light(&mut self) -> Option<&mut AutoLight> {
-        if self.auto_light.model.is_none() && !self.auto_light.failed {
-            let mut fb = None;
-            self.auto_light.ensure_loaded(
-                &self.provider,
-                AutoLight::load_with_provider,
-                "auto light unavailable (needs an NPU and the iat_lowlight model)",
-                &mut fb,
-            );
-            if let Some(f) = fb {
-                self.detail = Some(f);
+        let mut fb = None;
+        match self.auto_light.touch(
+            self.background,
+            &self.provider,
+            AutoLight::load_with_provider,
+            "auto light unavailable (needs an NPU and the iat_lowlight model)",
+            &mut fb,
+        ) {
+            Touch::Nothing => {}
+            Touch::Queued => self.queued.auto_light = true,
+            Touch::Loaded => {
+                if fb.is_some() {
+                    self.detail = fb;
+                }
+                self.update_active_status();
             }
-            self.update_active_status();
         }
         self.auto_light.as_mut()
     }
@@ -386,6 +620,48 @@ mod tests {
         let mut slot: Slot<u32> = Slot::default();
         assert!(slot.get_simple(|| anyhow::bail!("missing"), "x").is_none());
         assert!(slot.get_simple(|| Ok(1), "x").is_none());
+    }
+
+    #[test]
+    fn background_mode_queues_loads_once_and_adopts_them() {
+        let mut eng = Engine::with_provider("cpu");
+        eng.background = true;
+        assert!(eng.selfie().is_none());
+        assert!(eng.palm().is_none());
+        assert!(eng.selfie().is_none());
+        let req = eng.take_request().expect("queued");
+        assert_eq!(
+            req.models,
+            LoadedModels {
+                selfie: true,
+                palm: true,
+                ..Default::default()
+            }
+        );
+        assert!(eng.take_request().is_none());
+        assert!(eng.selfie().is_none());
+        assert!(
+            eng.take_request().is_none(),
+            "a loading slot is not queued again"
+        );
+
+        assert!(eng.adopt(req.run()));
+        assert!(!eng.selfie.loading && !eng.palm.loading);
+        assert!(eng.selfie.is_loaded() || eng.selfie.failed);
+        let _ = eng.selfie();
+        assert!(eng.take_request().is_none());
+    }
+
+    #[test]
+    fn stale_background_load_is_dropped() {
+        let mut eng = Engine::with_provider("cpu");
+        eng.background = true;
+        let _ = eng.yunet();
+        let req = eng.take_request().unwrap();
+        eng.replace(Engine::with_provider("cpu"));
+        assert!(eng.background, "a swap keeps background mode");
+        assert!(!eng.adopt(req.run()));
+        assert!(!eng.yunet.is_loaded());
     }
 
     #[test]

@@ -275,8 +275,16 @@ sha256.
 | MediaPipe hand landmarks | 224² crop | Reactions, hand masking |
 | IAT low-light (experimental, not fetched) | 256² | Auto light |
 
-Models load lazily. A model that fails to load is remembered as failed and
-logged once rather than retried every frame.
+Models load lazily, but never on the streaming thread: in the daemon a frame
+that needs an unloaded model queues it, a loader thread loads it and runs it
+once on a blank frame, and the effect skips frames until the model lands. The
+blank run matters: OpenVINO compiles for the NPU on a session's first run, not
+at load, and that first run took 365 ms with a cold cache. A swap in between discards the
+stale result. At start the daemon also compiles the enabled effects' models
+once and drops them, so OpenVINO's compile cache
+(`~/.cache/vinoopeneffects/openvino`) is warm before a consumer connects. A model
+that fails to load is remembered as failed and logged once rather than retried
+every frame.
 
 **The runtime is loaded, not linked.** The default `npu` feature loads
 `libonnxruntime.so` at start, from `ORT_DYLIB_PATH`, else the first of
@@ -287,11 +295,17 @@ models. `--no-default-features` links a CPU-only runtime statically instead.
 
 **Execution provider.** `VINOOPENEFFECTS_EP`, when set, beats the saved
 `[inference] provider`. `auto` uses OpenVINO on the NPU when there is one and
-falls back to CPU, with a log line, if there is no NPU, the runtime has no
-OpenVINO provider, or a model fails to compile for the NPU. A failed accelerator
-is remembered so later loads go straight to CPU. Explicit `npu` and `gpu` are
-strict: they fail rather than quietly running on CPU, so a CPU run never passes
-as an NPU run.
+falls back to CPU if there is no NPU, the runtime has no OpenVINO provider, or a
+model fails to compile for the NPU. Explicit `npu` falls back the same way: it is
+a speed preference saved in `state.toml`, and a driver update shouldn't strip
+the effects weeks later. A fallback is never quiet. `inference_detail` says why
+and how to fix it, and `inference_degraded` is set whenever an NPU exists but
+the models aren't all on it. A compile failure is logged at error level once and
+written to `$XDG_STATE_HOME/vinoopeneffects/npu-failure.toml` with the NPU
+driver and runtime versions. `auto` skips the NPU while that record matches the
+installed versions; an explicit `npu` retries and clears the record on success,
+and `RetryInference` (`vinoopeneffects-ctl inference --retry`) clears it and
+reloads. Only an explicit `gpu` is strict and fails rather than running on CPU.
 
 **Swapping at runtime.** A provider change builds a whole new engine off the
 frame path, with every loaded model reloaded on the new provider, while frames

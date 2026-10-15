@@ -23,6 +23,7 @@ const NARROW_BREAKPOINT: &str = "max-width: 760sp";
 
 struct Widgets {
     banner: adw::Banner,
+    inference_banner: adw::Banner,
     center_stage: center_stage::Widgets,
     background: background::Widgets,
     studio_light: studio_light::Widgets,
@@ -124,10 +125,21 @@ pub fn build_window(
     header.pack_end(&menu_button);
 
     let banner = adw::Banner::builder().revealed(false).build();
+    let inference_banner = adw::Banner::builder()
+        .revealed(false)
+        .button_label("Retry NPU")
+        .build();
+    {
+        let cmd_tx = cmd_tx.clone();
+        inference_banner.connect_button_clicked(move |_| {
+            let _ = cmd_tx.send(GuiCommand::RetryInference);
+        });
+    }
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
     toolbar.add_top_bar(&banner);
+    toolbar.add_top_bar(&inference_banner);
     toolbar.set_content(Some(&body));
 
     let window = ApplicationWindow::builder()
@@ -149,6 +161,7 @@ pub fn build_window(
 
     let widgets = Rc::new(Widgets {
         banner,
+        inference_banner,
         center_stage: cs_widgets,
         background: bg_widgets,
         studio_light: sl_widgets,
@@ -430,6 +443,11 @@ fn apply_capabilities(w: &Widgets, caps: &VariantMap) {
         .and_then(value_as_str_array)
         .unwrap_or_default();
     let inf_detail = caps.get("inference_detail").and_then(value_as_string);
+    let degraded = caps
+        .get("inference_degraded")
+        .and_then(value_as_bool)
+        .unwrap_or(false);
+    apply_inference_banner(w, degraded, inf_detail.as_deref());
     apply_inference(
         w,
         inf_req.as_deref(),
@@ -492,6 +510,22 @@ fn apply_inference(
             .inference_row
             .set_subtitle("Auto selects NPU when available, falls back to CPU");
     }
+}
+
+/// Says when an NPU is present but unused, why, and offers a retry.
+fn apply_inference_banner(w: &Widgets, degraded: bool, detail: Option<&str>) {
+    if !degraded {
+        w.inference_banner.set_revealed(false);
+        return;
+    }
+    let reason = detail
+        .filter(|d| !d.is_empty())
+        .unwrap_or("the NPU is not usable");
+    w.inference_banner
+        .set_title(&glib::markup_escape_text(&format!(
+            "Effects run on CPU: {reason}"
+        )));
+    w.inference_banner.set_revealed(true);
 }
 
 fn apply_inference_changed(w: &Widgets, active: &str, detail: &str) {
