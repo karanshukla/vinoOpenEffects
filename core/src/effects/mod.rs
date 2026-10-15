@@ -28,6 +28,9 @@
 //! (`SEG_INTERVAL`) with the mask reused in between, and YuNet detection on a
 //! coarser one (`FACE_INTERVAL`) — the reframe deadzone absorbs the staleness.
 //!
+//! Before any of them, a temporal denoise (see [`denoise`]) cleans the frame
+//! whenever an effect would amplify its noise.
+//!
 //! 4. **Reactions** — reverse-rain emoji bursts (see [`reactions`]), composited
 //!    last over the final canvas. Triggered manually or, when enabled,
 //!    automatically by the hand-gesture pipeline.
@@ -36,6 +39,7 @@ mod auto_light;
 mod blur;
 mod center_stage;
 mod composite;
+mod denoise;
 mod mask;
 pub mod reactions;
 mod resample;
@@ -53,6 +57,7 @@ use auto_light::AutoLightState;
 use blur::BlurScratch;
 use center_stage::{CenterStage, extract_roi, resample_crop, upscale_roi};
 use composite::Background;
+use denoise::Denoise;
 use mask::PersonMask;
 use reactions::Reactions;
 use studio_light::{StudioPivot, apply_studio};
@@ -70,6 +75,7 @@ pub struct Effects {
     bg: Background,
     studio_pivot: StudioPivot,
     auto_light: AutoLightState,
+    denoise: Denoise,
     gestures: GestureDetector,
     /// Reverse-rain emoji particle system (manual + gesture triggers).
     reactions: Reactions,
@@ -99,6 +105,7 @@ impl Effects {
         self.mask.reset();
         self.bg.clear();
         self.auto_light.gain = None;
+        self.denoise.reset();
         self.gestures.reset();
     }
 
@@ -114,10 +121,14 @@ impl Effects {
             self.reactions.trigger(g.reaction_id(), self.frame);
         }
 
+        let precise = self
+            .settings
+            .needs_denoise()
+            .then(|| self.denoise.apply(self.frame, img, w, h));
         if self.settings.auto_light_enabled {
             let strength = self.settings.auto_light_strength;
             self.auto_light
-                .apply(&mut self.engine, self.frame, strength, img, w, h);
+                .apply(&mut self.engine, self.frame, strength, img, w, h, precise);
         }
 
         if self.settings.center_stage_active() {
@@ -143,13 +154,12 @@ impl Effects {
             return;
         }
 
-        let (mut roi, rw, rh) = extract_roi(img, w, h, crop);
-        if rw == w && rh == h {
+        let Some(mut roi) = extract_roi(img, w, h, crop) else {
             self.masked_effects(img, w, h, false);
             return;
-        }
-        self.masked_effects(&mut roi, rw, rh, true);
-        upscale_roi(img, w, h, &roi, rw, rh);
+        };
+        self.masked_effects(&mut roi.buf, roi.w, roi.h, true);
+        upscale_roi(img, w, h, &roi);
     }
 
     /// Run every mask-gated effect over a tight RGBA buffer: segment **once**,

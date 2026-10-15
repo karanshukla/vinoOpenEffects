@@ -165,12 +165,35 @@ Per frame, in this order:
 1. **Gestures**, on the original frame. They must see the whole frame before
    auto light and the center-stage crop rewrite it in place. A confirmed
    gesture queues a reaction.
-2. **Auto light** (opt-in, NPU only). See below.
-3. **Center Stage**, if on. Framing is decided on the full frame, then the
+2. **Denoise**, when Auto light, Studio Light or Center Stage is on. See
+   below.
+3. **Auto light** (opt-in, NPU only). See below.
+4. **Center Stage**, if on. Framing is decided on the full frame, then the
    masked effects run on just the crop ROI, the only pixels the zoom keeps,
    before it is upscaled to the output. Otherwise the masked effects run on the
    full frame.
-4. **Reactions**, last, so emoji are never cropped or blurred.
+5. **Reactions**, last, so emoji are never cropped or blurred.
+
+### Denoise
+
+Gain, contrast and zoom all amplify sensor noise, so a temporal denoise runs
+first whenever one of them is on. Each pixel is a recursive average with the
+previous output. A still pixel keeps 75% of the history (`MAX_HISTORY`).
+
+Whether a pixel is still is judged per 8×8 block (`BLOCK`), from the block's
+mean signed luma change against the history. Noise averages out across a block
+and real motion doesn't, so the threshold can sit at a couple of levels
+(`STILL`, `MOVING`) without treating noise as motion. A per-pixel test would
+need a threshold above the noise, and a face drifting a few levels a frame
+falls under it and smears. Each block takes the most-moving of its neighbours,
+so a still block beside a moving edge doesn't trail into it, and a pixel whose
+own change reaches 24 levels (`PIXEL_MOVING`) passes through regardless, for
+thin edges a block average would miss. The history resets on a resolution
+change or a skipped frame.
+
+The history keeps 8 fractional bits. Auto light reads that instead of the
+rounded frame, so a 6× gain multiplies the averaged value and rounds to u8
+once, rather than stretching 8-bit steps into visible bands.
 
 ### The person mask
 
@@ -235,6 +258,11 @@ face the target is held, so a brief look-away does not drift the crop.
 Framing follows the eye midpoint, nudged down a quarter of the face height
 toward the face centre for balanced headroom. In `group` mode it frames the
 union of every face's head box.
+
+With a masked effect on, the crop is copied out at whole-pixel bounds (plus a
+pixel of margin) and the exact fractional crop is applied once, on the bilinear
+upscale back to the output. The ROI path is therefore no softer than the plain
+zoom, and the EMA pan stays sub-pixel smooth.
 
 The crop moves like macOS Center Stage, locked until the subject really moves:
 
