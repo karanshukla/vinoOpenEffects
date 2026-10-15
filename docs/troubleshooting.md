@@ -39,6 +39,7 @@ For more detail, set `RUST_LOG` in the daemon's environment (it defaults to
 | `inference: build` | A `--no-default-features` (CPU-only) build | Rebuild with default features for the NPU |
 | `inference: onnxruntime` | No `libonnxruntime.so` found, or it has no OpenVINO provider. Without it no model runs, CPU included | `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort`, or set `ORT_DYLIB_PATH` |
 | `inference: npu` | No `/dev/accel/accel*`: no NPU, or the `intel_vpu` driver isn't loaded | Expected on machines without an NPU; `auto` uses CPU |
+| `inference: npu-failure` | A model failed to compile for the NPU on this driver and runtime, so `auto` uses CPU | `ovfetch detect`, then `vinoopeneffects-ctl inference --retry` |
 | `models: <id>` | A model is missing or its sha256 doesn't match the manifest | `scripts/fetch-models.sh` |
 | `camera: devices` | No camera found | Connect one; check `ls /dev/video*` |
 | `camera: selected` | The configured camera is gone, or it's an IR sensor | `vinoopeneffects-ctl camera list`, then `vinoopeneffects-ctl camera /dev/videoN` |
@@ -76,9 +77,10 @@ onnxruntime` and the `models:` lines; a missing model is logged once in the
 journal, not every frame.
 
 **The NPU isn't used.** `vinoopeneffects-ctl inference` shows the requested and
-active provider and why they differ. After a failed NPU compile `auto` stays on
-CPU until the provider is switched; `vinoopeneffects-ctl inference npu` reports
-the error instead of falling back.
+active provider, whether that is degraded, and why. After a failed NPU compile
+`auto` stays on CPU, across restarts, until the NPU driver or runtime changes.
+Check the driver and compiler with `ovfetch detect`, then try again with
+`vinoopeneffects-ctl inference --retry` (or **Retry NPU** on the GUI's banner).
 
 **Clients can't reach a daemon that was just installed.** The session bus reads
 new activation files only on reload:

@@ -77,9 +77,19 @@ async fn run() -> anyhow::Result<()> {
         );
     }
 
-    let state = Arc::new(RwLock::new(DaemonState::new(app, models_ready)));
+    let warm_models = pipeline::effects::wanted_models(&app);
+    let daemon_state = DaemonState::new(app, models_ready);
+    let warm_provider = daemon_state.requested_inference_provider();
+    if daemon_state.inference_degraded() {
+        warn!(
+            detail = daemon_state.inference_detail.as_deref().unwrap_or(""),
+            "an NPU is present but models will run on CPU"
+        );
+    }
+    let state = Arc::new(RwLock::new(daemon_state));
     let (pipeline_tx, pipeline_rx) = mpsc::channel(32);
     let (event_tx, mut event_rx) = mpsc::channel(32);
+    spawn_warm_up(warm_provider, warm_models, event_tx.clone());
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     let worker = pipeline::spawn_worker(pipeline_rx, event_tx);
 
@@ -144,6 +154,12 @@ async fn run() -> anyhow::Result<()> {
                     PipelineEvent::InferenceChanged { active, detail } => {
                         state.inference_active = active.clone();
                         state.inference_detail = detail.clone();
+                        if state.inference_degraded() {
+                            warn!(
+                                detail = detail.as_deref().unwrap_or(""),
+                                "an NPU is present but models run on {active}"
+                            );
+                        }
                         inference_change = Some((active, detail));
                     }
                 }
@@ -195,4 +211,27 @@ async fn run() -> anyhow::Result<()> {
     let _ = pipeline_tx.send(PipelineCommand::Shutdown).await;
     let _ = worker.join();
     Ok(())
+}
+
+/// Compile the enabled effects' models at start, off every frame path, so the
+/// first stream loads them from OpenVINO's cache; a failure is reported now.
+fn spawn_warm_up(
+    provider: String,
+    models: oe_core::inference::engine::LoadedModels,
+    events: mpsc::Sender<PipelineEvent>,
+) {
+    if !models.any() {
+        return;
+    }
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        let (active, detail) = oe_core::inference::engine::warm(&provider, models);
+        info!(%active, elapsed = ?started.elapsed(), ?models, "warmed models");
+        if oe_core::inference::degraded(&provider, active) {
+            let _ = events.blocking_send(PipelineEvent::InferenceChanged {
+                active: active.into(),
+                detail,
+            });
+        }
+    });
 }

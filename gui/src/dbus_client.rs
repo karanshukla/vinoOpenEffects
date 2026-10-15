@@ -44,6 +44,8 @@ pub enum GuiCommand {
     },
     /// Switch inference execution provider ("auto" | "cpu" | "npu").
     SetInferenceProvider(String),
+    /// Forget recorded NPU failures and reload the models.
+    RetryInference,
     /// Terminate the daemon process, then acknowledge with `UiUpdate::DaemonQuit`
     /// so the GUI can finish closing only after the call has been delivered.
     QuitDaemon,
@@ -176,6 +178,11 @@ async fn run_once(
                     Some(GuiCommand::SetInferenceProvider(provider)) => {
                         if let Err(err) = daemon.set_inference_provider(&provider).await {
                             tracing::warn!(%err, provider, "SetInferenceProvider failed");
+                        }
+                    }
+                    Some(GuiCommand::RetryInference) => {
+                        if let Err(err) = daemon.retry_inference().await {
+                            tracing::warn!(%err, "RetryInference failed");
                         }
                     }
                     Some(GuiCommand::QuitDaemon) => {

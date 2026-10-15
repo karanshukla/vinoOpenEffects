@@ -37,6 +37,8 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
     ));
     let accel_count = inference::probe_npu_devices();
     checks.push(inference::npu_hardware_verdict(accel_count));
+    let record = inference::probe_npu_failure(ort_lib.as_deref());
+    checks.push(inference::npu_failure_verdict(record.as_ref()));
 
     let search_dirs = models::model_search_dirs(home_ref);
     for m in models::KNOWN_MODELS {
@@ -142,7 +144,7 @@ mod tests {
     #[test]
     fn run_all_produces_a_check_per_probe() {
         let checks = run_all(Err("daemon is not running"));
-        assert_eq!(checks.len(), 13 + models::KNOWN_MODELS.len());
+        assert_eq!(checks.len(), 14 + models::KNOWN_MODELS.len());
         for c in &checks {
             assert!(!c.group.is_empty() && !c.name.is_empty(), "{c:?}");
         }

@@ -12,10 +12,16 @@ snapshot, not a promise.
 | **GPU** (OpenVINO EP) | `VINOOPENEFFECTS_EP=gpu` only; `auto` never picks it, and the saved setting takes `auto`, `cpu` or `npu` | Same models as the NPU path. Not measured yet |
 | **CPU** | `auto` without a usable NPU, or `cpu` explicitly | Every model except Auto light, which stays off |
 
-`auto` falls back to CPU with a log line when there is no NPU, the runtime has
-no OpenVINO provider, or a model fails to compile for the NPU, and remembers the
-failure so later loads skip the NPU. An explicit `npu` or `gpu` that can't be
-honoured is an error, never a quiet CPU run. Set the provider with
+`auto` and `npu` fall back to CPU when the runtime has no OpenVINO provider or a
+model fails to compile for the NPU, and never stop the video over it. When an
+NPU exists but isn't used the install is *degraded*: the reason and its fix show
+in the daemon log, `vinoopeneffects-ctl status` and `inference`, `doctor`, and a
+banner in the GUI. A machine without an NPU just runs on CPU and isn't degraded.
+A compile failure is recorded under `$XDG_STATE_HOME/vinoopeneffects/`, keyed
+on the NPU driver and runtime versions, so `auto` skips the NPU on later starts
+until `vinoopeneffects-ctl inference --retry` or a driver or runtime upgrade.
+An explicit `npu` always tries again. Only an explicit `gpu` that can't be
+honoured is an error. Set the provider with
 `vinoopeneffects-ctl inference auto|cpu|npu` (saved to `state.toml`, swappable
 while streaming) or `VINOOPENEFFECTS_EP` in the daemon's environment, which wins.
 [architecture.md](architecture.md#inference) has the mechanics.
@@ -44,9 +50,25 @@ GStreamer and PipeWire are not in it.
 | Palm detection | 4.9 | 2.1 | 533 ms |
 | Hand landmarks | 2.6 | 1.2 | 426 ms |
 
-The NPU run was confirmed on hardware through `npu_busy_time_us`. On a later run
-palm and hand loaded in 37 ms and 68 ms, so the first-run compile is not paid
-every launch.
+The NPU run was confirmed on hardware through `npu_busy_time_us`.
+
+### NPU load time and the compile cache
+
+OpenVINO's compiled models are cached in `~/.cache/vinoopeneffects/openvino`
+(about 6 MB for the four models). Load ms per model, measured 2026-10-15 on the
+same XPS 13 (NPU driver 1.35.0, onnxruntime 1.24.1 with OpenVINO 2026.4.1),
+`--bench-inference` on the NPU:
+
+| Model | No cache | Cached |
+|---|---|---|
+| Selfie segmentation | 39–88 | 34–71 |
+| YuNet | 3–9 | 3–7 |
+| Palm detection | 301–354 | 33–40 |
+| Hand landmarks | 240–288 | 34–56 |
+
+The daemon also compiles the enabled effects' models on a background thread at
+start, and never compiles on the streaming thread: until a model is ready its
+effect skips frames and the video passes through unchanged.
 
 Auto light's IAT model, measured 2026-10-12 on the same machine: about 10 ms per
 256² frame on the NPU and about 850 ms on CPU, which is why it never runs on CPU.

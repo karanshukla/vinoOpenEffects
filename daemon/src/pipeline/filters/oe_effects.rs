@@ -33,7 +33,7 @@ mod imp {
     use gstreamer_video::subclass::prelude::*;
     use oe_core::effects::Effects;
     use oe_core::effects::settings::{DEFAULT_MODE, DEFAULT_STRENGTH, DEFAULT_ZOOM};
-    use oe_core::inference::engine::Engine;
+    use oe_core::inference::engine::{Engine, LoadRequest};
 
     #[derive(Default)]
     struct State {
@@ -63,6 +63,18 @@ mod imp {
                     tracing::info!("unloaded idle models");
                     unsafe { libc::malloc_trim(0) };
                 }
+            }
+        });
+    }
+
+    /// Compile queued models off the streaming thread; their effects skip frames until they land.
+    fn spawn_loader(weak: glib::WeakRef<super::OeEffects>, request: LoadRequest) {
+        std::thread::spawn(move || {
+            let loaded = request.run();
+            let Some(obj) = weak.upgrade() else { return };
+            let adopted = obj.imp().state.lock().unwrap().effects.engine.adopt(loaded);
+            if adopted {
+                obj.notify("inference-active");
             }
         });
     }
@@ -155,6 +167,9 @@ mod imp {
                         .default_value(Some("cpu"))
                         .read_only()
                         .build(),
+                    glib::ParamSpecString::builder("inference-detail")
+                        .read_only()
+                        .build(),
                 ]
             });
             PROPERTIES.as_ref()
@@ -237,13 +252,17 @@ mod imp {
                 "inference-provider" => engine.provider.to_value(),
                 "inference-generation" => engine.generation.to_value(),
                 "inference-active" => engine.active.to_value(),
+                "inference-detail" => engine.detail.to_value(),
                 _ => unimplemented!(),
             }
         }
 
         fn constructed(&self) {
             self.parent_constructed();
-            let active = self.state.lock().unwrap().effects.settings.active();
+            let mut state = self.state.lock().unwrap();
+            state.effects.engine.background = true;
+            let active = state.effects.settings.active();
+            drop(state);
             self.obj().set_passthrough(!active);
             spawn_model_reaper(self.obj().downgrade());
         }
@@ -331,6 +350,11 @@ mod imp {
             state.effects.process(&mut img, w, h);
             unpack(&img, plane, w, h, stride);
             state.canvas = img;
+            let request = state.effects.engine.take_request();
+            drop(state);
+            if let Some(request) = request {
+                spawn_loader(self.obj().downgrade(), request);
+            }
             Ok(gst::FlowSuccess::Ok)
         }
     }

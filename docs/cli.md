@@ -35,7 +35,7 @@ vinoopeneffects-ctl status
 | `vinoopeneffects-ctl status`         | Print status plus capabilities (execution provider, model readiness, output sink).            |
 | `vinoopeneffects-ctl status --short` | One-word status, e.g. for Waybar.                                                                   |
 | `vinoopeneffects-ctl status --json`  | Machine-readable status.                                                                            |
-| `vinoopeneffects-ctl inference [ep]` | View or switch the inference execution provider (`auto`, `cpu`, `npu`).                             |
+| `vinoopeneffects-ctl inference [ep]` | View or switch the inference execution provider (`auto`, `cpu`, `npu`); `--retry` retries a failed NPU. |
 | `vinoopeneffects-ctl doctor`         | Run diagnostic checks across daemon, NPU, models, cameras, and pipeline.                            |
 | `vinoopeneffects-ctl watch`          | Stream `EffectChanged` signals until interrupted (Ctrl-C).                                          |
 
@@ -51,8 +51,14 @@ vinoopeneffects-ctl inference          # show requested, active, available EPs, 
 vinoopeneffects-ctl inference npu      # switch to Intel NPU (OpenVINO EP)
 vinoopeneffects-ctl inference cpu      # switch to CPU
 vinoopeneffects-ctl inference auto     # auto-select NPU if present, CPU otherwise
+vinoopeneffects-ctl inference --retry  # forget a recorded NPU compile failure and reload
 vinoopeneffects-ctl inference --json   # machine-readable output
 ```
+
+`active` is marked *degraded* when an NPU is present but the models aren't all on
+it; `detail` says why and what fixes it, and `status` prints the same warning.
+A failed NPU compile is recorded so `auto` keeps to CPU on later starts until
+`--retry` or an NPU driver or runtime upgrade.
 
 Provider changes are persisted to `~/.config/vinoopeneffects/state.toml` under `[inference] provider`. Switching while streaming loads the new models alongside the old ones, so frames keep flowing on the old provider until the new one is ready. If `VINOOPENEFFECTS_EP` is set in the daemon's environment, it overrides this setting.
 

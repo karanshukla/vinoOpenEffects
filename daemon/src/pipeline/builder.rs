@@ -74,6 +74,17 @@ impl BuiltCapture {
         }
     }
 
+    /// Report the live models' provider each time a background load changes it.
+    pub fn watch_inference(&self, events: tokio::sync::mpsc::Sender<super::PipelineEvent>) {
+        let Some(oe) = self.oe_effects() else { return };
+        oe.connect_notify(Some("inference-active"), move |el, _| {
+            let _ = events.try_send(super::PipelineEvent::InferenceChanged {
+                active: el.property("inference-active"),
+                detail: el.property("inference-detail"),
+            });
+        });
+    }
+
     /// The provider the live models are on, e.g. after a failed swap left them
     /// where they were.
     pub fn inference_active(&self) -> Option<String> {
