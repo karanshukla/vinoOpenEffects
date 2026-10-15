@@ -71,6 +71,12 @@ impl Settings {
         self.blur_enabled || self.bg_enabled
     }
 
+    /// Whether an effect amplifies sensor noise (gain, contrast, zoom), so
+    /// the frame is temporally denoised first.
+    pub fn needs_denoise(&self) -> bool {
+        self.auto_light_enabled || self.studio_enabled || self.center_stage_active()
+    }
+
     /// Whether any effect needs the selfie segmentation mask (studio light,
     /// portrait blur, bg replace). Drives the single shared segmentation.
     pub fn needs_mask(&self) -> bool {

@@ -134,7 +134,7 @@ fn golden_frames_are_unchanged() {
                 blur_strength: 70,
                 ..Settings::default()
             },
-            "0502e625f2d44a633f3d3521bbcf76f36ff678f82f057e020530b5fdb4735d9a",
+            "502ff47b36c0ce8dfb227726f7cd75bdb2c14d661fd06b7c5cf826156a73cd6d",
         ),
         (
             "light blur",
@@ -154,7 +154,7 @@ fn golden_frames_are_unchanged() {
                 studio_brightness: 0.1,
                 ..Settings::default()
             },
-            "fcf136772a179ea5bfaf033dddee85727dd5fed4e7367115c09d94cfe18c0a77",
+            "49dcf09c41dedcc141a891ebb789da236c1bfb998a0283ba069035ddc6ee203f",
         ),
         (
             "bg image",
@@ -172,7 +172,7 @@ fn golden_frames_are_unchanged() {
                 cs_zoom: "tight".into(),
                 ..Settings::default()
             },
-            "9602119145eaf540b0245d68c5d0c2ec652611474ec00d6200177dfc7b8b5f7e",
+            "21a26f890f29d0c1086a10b34fdf0977acd386f7f0baf9e6cfa777d7bf537d21",
         ),
         (
             "center stage + blur",
@@ -181,7 +181,7 @@ fn golden_frames_are_unchanged() {
                 blur_enabled: true,
                 ..Settings::default()
             },
-            "bbc8e81bacf68111de09e4e805b00e2a533775650c59a5690fd4270820b99c64",
+            "914e7f546da6bd5e74f8632c62cbc6a0964b76d530f8665da53b218fde2aa3d9",
         ),
         (
             "center stage group + bg color",
@@ -193,7 +193,7 @@ fn golden_frames_are_unchanged() {
                 bg_path: "#102030".into(),
                 ..Settings::default()
             },
-            "f171b59f3876419af500a1ac6a879b1af8bb549836dcee356c76f651d8eb1139",
+            "20ff0a4ce30648322613956c71853b25fbef69f032af691a52b37fb3ffbc3436",
         ),
         (
             "auto light + reactions",
@@ -202,7 +202,7 @@ fn golden_frames_are_unchanged() {
                 reactions_enabled: true,
                 ..Settings::default()
             },
-            "f4d93c718370072a9ec17bd82c9e5abad4ed06322a1d2a642f19eb4f284c2fd8",
+            "85f9569faee5f2600688826d825028d0fc8b144c9a60f13058cd4d7d01f9ef90",
         ),
     ];
     let mut failures = Vec::new();

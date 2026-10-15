@@ -76,6 +76,15 @@ through unchanged.
 Auto light's IAT model, measured 2026-10-12 on the same machine: about 10 ms per
 256² frame on the NPU and about 850 ms on CPU, which is why it never runs on CPU.
 
+Denoise, measured 2026-10-15 on the same machine: about 2.1 ms median per
+1280×720 frame on CPU, release build.
+
+Intel's `single-image-super-resolution-1032` and `-1033`, tried as an NPU
+upscale for Center Stage, measured 2026-10-15 on the same machine with
+`benchmark_app -d NPU -hint latency` (OpenVINO 2026.4.1): 42 ms and 65 ms
+median at their fixed 640×360 input. Each is over the 33 ms frame budget on its
+own, so Center Stage upscales bilinearly.
+
 ### Reproducing
 
 ```bash

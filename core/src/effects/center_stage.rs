@@ -143,45 +143,59 @@ impl CenterStage {
     }
 }
 
-/// Extract the crop window into a tight `rw×rh` RGBA buffer (bilinear), so
-/// segmentation/blur/composite run on ROI-sized pixels. Returns the buffer
-/// and its dimensions (`(w, h)` when the crop spans the whole frame).
-pub(crate) fn extract_roi(
-    img: &[u8],
-    w: usize,
-    h: usize,
-    crop: CropState,
-) -> (Vec<u8>, usize, usize) {
+/// The crop window copied out at whole-pixel bounds, plus where the exact
+/// (fractional) crop sits inside it, so the frame is resampled only once, on
+/// the way back up.
+pub(crate) struct Roi {
+    pub(crate) buf: Vec<u8>,
+    pub(crate) w: usize,
+    pub(crate) h: usize,
+    x0: f32,
+    y0: f32,
+    span_x: f32,
+    span_y: f32,
+}
+
+/// Copy the crop window into a tight RGBA buffer so segmentation, blur and
+/// composite run on ROI-sized pixels. `None` when the crop spans the frame.
+pub(crate) fn extract_roi(img: &[u8], w: usize, h: usize, crop: CropState) -> Option<Roi> {
     let zf = crop.zf.clamp(CS_MIN_CROP, 1.0);
     if zf >= 0.999 {
-        return (img.to_vec(), w, h);
+        return None;
     }
     let span_x = zf * w as f32;
     let span_y = zf * h as f32;
-    let x0 = (crop.cx - zf / 2.0) * w as f32;
-    let y0 = (crop.cy - zf / 2.0) * h as f32;
-    let rw = (span_x.round() as usize).max(1);
-    let rh = (span_y.round() as usize).max(1);
-    let mut roi = vec![0u8; rw * rh * 4];
-    for y in 0..rh {
-        let sv = y0 + (y as f32 + 0.5) / rh as f32 * span_y - 0.5;
-        for x in 0..rw {
-            let su = x0 + (x as f32 + 0.5) / rw as f32 * span_x - 0.5;
-            let dp = (y * rw + x) * 4;
-            sample_bilinear(img, w, h, su, sv, &mut roi[dp..dp + 4]);
-        }
+    let fx = (crop.cx - zf / 2.0) * w as f32;
+    let fy = (crop.cy - zf / 2.0) * h as f32;
+    // One pixel of margin each side: bilinear at the crop's edge reads its neighbour.
+    let ix = ((fx.floor() - 1.0).max(0.0) as usize).min(w - 1);
+    let iy = ((fy.floor() - 1.0).max(0.0) as usize).min(h - 1);
+    let ex = (((fx + span_x).ceil() + 1.0) as usize).clamp(ix + 1, w);
+    let ey = (((fy + span_y).ceil() + 1.0) as usize).clamp(iy + 1, h);
+    let (rw, rh) = (ex - ix, ey - iy);
+    let mut buf = Vec::with_capacity(rw * rh * 4);
+    for y in iy..ey {
+        buf.extend_from_slice(&img[(y * w + ix) * 4..(y * w + ex) * 4]);
     }
-    (roi, rw, rh)
+    Some(Roi {
+        buf,
+        w: rw,
+        h: rh,
+        x0: fx - ix as f32,
+        y0: fy - iy as f32,
+        span_x,
+        span_y,
+    })
 }
 
-/// Upscale the composited ROI back into the full-frame output (bilinear).
-pub(crate) fn upscale_roi(img: &mut [u8], w: usize, h: usize, roi: &[u8], rw: usize, rh: usize) {
+/// Upscale the composited ROI's exact crop back into the full-frame output (bilinear).
+pub(crate) fn upscale_roi(img: &mut [u8], w: usize, h: usize, roi: &Roi) {
     for y in 0..h {
-        let sv = (y as f32 + 0.5) / h as f32 * rh as f32 - 0.5;
+        let sv = roi.y0 + (y as f32 + 0.5) / h as f32 * roi.span_y - 0.5;
         for x in 0..w {
-            let su = (x as f32 + 0.5) / w as f32 * rw as f32 - 0.5;
+            let su = roi.x0 + (x as f32 + 0.5) / w as f32 * roi.span_x - 0.5;
             let dp = (y * w + x) * 4;
-            sample_bilinear(roi, rw, rh, su, sv, &mut img[dp..dp + 4]);
+            sample_bilinear(&roi.buf, roi.w, roi.h, su, sv, &mut img[dp..dp + 4]);
         }
     }
 }
@@ -288,5 +302,38 @@ fn crop_target(subject: Option<(f32, f32, f32, SubjectKind)>, zoom: &str) -> Cro
         cx: cx.clamp(half, 1.0 - half),
         cy: cy.clamp(half, 1.0 - half),
         zf,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roi_round_trip_resamples_once() {
+        let (w, h) = (64, 48);
+        let img: Vec<u8> = (0..w * h)
+            .flat_map(|i| {
+                let (x, y) = (i % w, i / w);
+                [(x * 4) as u8, (y * 5) as u8, ((x * y) % 251) as u8, 255]
+            })
+            .collect();
+        let crop = CropState {
+            cx: 0.537,
+            cy: 0.461,
+            zf: 0.413,
+        };
+        let mut direct = img.clone();
+        resample_crop(&mut direct, w, h, crop);
+
+        let roi = extract_roi(&img, w, h, crop).unwrap();
+        let mut via_roi = img.clone();
+        upscale_roi(&mut via_roi, w, h, &roi);
+        assert_eq!(via_roi, direct);
+    }
+
+    #[test]
+    fn full_frame_crop_has_no_roi() {
+        assert!(extract_roi(&[0; 16], 2, 2, CropState::default()).is_none());
     }
 }
