@@ -178,11 +178,18 @@ Per frame, in this order:
 
 Gain, contrast and zoom all amplify sensor noise, so a temporal denoise runs
 first whenever one of them is on. Each pixel is a recursive average with the
-previous output, weighted by how much it changed: identical pixels keep 75% of
-the history (`MAX_HISTORY`), and the weight falls to zero at a per-channel
-difference of 24 (`MOTION_THRESH`), so moving pixels pass through unaveraged
-and don't trail. A static webcam on a static background is the best case. The
-history resets on a resolution change or a skipped frame.
+previous output. A still pixel keeps 75% of the history (`MAX_HISTORY`).
+
+Whether a pixel is still is judged per 8×8 block (`BLOCK`), from the block's
+mean signed luma change against the history. Noise averages out across a block
+and real motion doesn't, so the threshold can sit at a couple of levels
+(`STILL`, `MOVING`) without treating noise as motion. A per-pixel test would
+need a threshold above the noise, and a face drifting a few levels a frame
+falls under it and smears. Each block takes the most-moving of its neighbours,
+so a still block beside a moving edge doesn't trail into it, and a pixel whose
+own change reaches 24 levels (`PIXEL_MOVING`) passes through regardless, for
+thin edges a block average would miss. The history resets on a resolution
+change or a skipped frame.
 
 The history keeps 8 fractional bits. Auto light reads that instead of the
 rounded frame, so a 6× gain multiplies the averaged value and rounds to u8

@@ -76,7 +76,7 @@ through unchanged.
 Auto light's IAT model, measured 2026-10-12 on the same machine: about 10 ms per
 256² frame on the NPU and about 850 ms on CPU, which is why it never runs on CPU.
 
-Denoise, measured 2026-10-15 on the same machine: about 2.1 ms median per
+Denoise, measured 2026-10-15 on the same machine: about 3.8 ms median per
 1280×720 frame on CPU, release build.
 
 Intel's `single-image-super-resolution-1032` and `-1033`, tried as an NPU

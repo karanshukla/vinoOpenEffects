@@ -124,7 +124,7 @@ impl Effects {
         let precise = self
             .settings
             .needs_denoise()
-            .then(|| self.denoise.apply(self.frame, img));
+            .then(|| self.denoise.apply(self.frame, img, w, h));
         if self.settings.auto_light_enabled {
             let strength = self.settings.auto_light_strength;
             self.auto_light
