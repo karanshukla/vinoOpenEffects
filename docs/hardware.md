@@ -66,9 +66,12 @@ same XPS 13 (NPU driver 1.35.0, onnxruntime 1.24.1 with OpenVINO 2026.4.1),
 | Palm detection | 301–354 | 33–40 |
 | Hand landmarks | 240–288 | 34–56 |
 
-The daemon also compiles the enabled effects' models on a background thread at
-start, and never compiles on the streaming thread: until a model is ready its
-effect skips frames and the video passes through unchanged.
+Load is only half of it: OpenVINO compiles on a session's first run. Selfie
+segmentation's first inference took 365 ms with no cache and 30 ms cached, then
+about 1.3 ms. The daemon does that first run on a loader thread, and compiles
+the enabled effects' models at start too, so the streaming thread never
+compiles: until a model is ready its effect skips frames and the video passes
+through unchanged.
 
 Auto light's IAT model, measured 2026-10-12 on the same machine: about 10 ms per
 256² frame on the NPU and about 850 ms on CPU, which is why it never runs on CPU.

@@ -276,8 +276,10 @@ sha256.
 | IAT low-light (experimental, not fetched) | 256² | Auto light |
 
 Models load lazily, but never on the streaming thread: in the daemon a frame
-that needs an unloaded model queues it, a loader thread compiles it, and the
-effect skips frames until the model lands. A swap in between discards the
+that needs an unloaded model queues it, a loader thread loads it and runs it
+once on a blank frame, and the effect skips frames until the model lands. The
+blank run matters: OpenVINO compiles for the NPU on a session's first run, not
+at load, and that first run took 365 ms with a cold cache. A swap in between discards the
 stale result. At start the daemon also compiles the enabled effects' models
 once and drops them, so OpenVINO's compile cache
 (`~/.cache/vinoopeneffects/openvino`) is warm before a consumer connects. A model

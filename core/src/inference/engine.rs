@@ -190,6 +190,7 @@ impl LoadRequest {
         if m.auto_light {
             let _ = engine.auto_light();
         }
+        engine.prime();
         Loaded {
             generation: self.generation,
             engine,
@@ -345,7 +346,36 @@ impl Engine {
             auto_light: Slot::preloaded(auto_light),
         };
         eng.update_active_status();
+        eng.prime();
         Ok(eng)
+    }
+
+    /// Run each loaded model once on a blank frame. OpenVINO compiles for the
+    /// NPU on the first run, not at load (365 ms cold here), so this keeps that
+    /// off the frame thread.
+    fn prime(&mut self) {
+        const S: usize = 64;
+        let blank = vec![0u8; S * S * 4];
+        if let Some(m) = self.selfie.model.as_mut() {
+            let _ = m.segment(&blank, S, S, S * 4);
+        }
+        if let Some(m) = self.yunet.model.as_mut() {
+            let _ = m.detect(&blank, S, S, S * 4, 1.0);
+        }
+        if let Some(m) = self.palm.model.as_mut() {
+            let _ = m.detect(&blank, S, S, S * 4, 1.0);
+        }
+        if let Some(m) = self.hand.model.as_mut() {
+            let crop = super::hand::CropBox {
+                cx: 0.5,
+                cy: 0.5,
+                side: 1.0,
+            };
+            let _ = m.infer(&blank, S, S, S * 4, crop);
+        }
+        if let Some(m) = self.auto_light.model.as_mut() {
+            let _ = m.analyze(&blank, S, S, S * 4);
+        }
     }
 
     pub fn loaded(&self) -> LoadedModels {
