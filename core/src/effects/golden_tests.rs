@@ -218,3 +218,70 @@ fn golden_frames_are_unchanged() {
         failures.join("\n")
     );
 }
+
+/// Effects whose selfie model is still loading: background mode queues the
+/// load and returns, as in the daemon, so no mask arrives.
+fn loading_effects(settings: Settings) -> Effects {
+    let mut engine = Engine::default();
+    engine.background = true;
+    Effects {
+        settings,
+        engine,
+        ..Effects::default()
+    }
+}
+
+#[test]
+fn replace_hides_the_frame_until_the_mask_exists() {
+    let mut fx = loading_effects(Settings {
+        bg_enabled: true,
+        bg_path: "#00ff00".into(),
+        ..Settings::default()
+    });
+    let mut img = golden_frame(0);
+    fx.process(&mut img, GOLDEN_W, GOLDEN_H);
+    assert!(
+        fx.engine.take_request().is_some(),
+        "the selfie load was not queued"
+    );
+    assert!(
+        img.as_chunks::<4>().0.iter().all(|p| p[..3] == [0, 255, 0]),
+        "a raw pixel went out while the model loaded"
+    );
+}
+
+#[test]
+fn blur_hides_the_frame_until_the_mask_exists() {
+    let mut fx = loading_effects(Settings {
+        blur_enabled: true,
+        blur_strength: 100,
+        ..Settings::default()
+    });
+    let raw = golden_frame(0);
+    let mut img = raw.clone();
+    fx.process(&mut img, GOLDEN_W, GOLDEN_H);
+    let same = raw
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(img.as_chunks::<4>().0)
+        .filter(|(a, b)| a == b)
+        .count();
+    assert!(
+        same * 20 < GOLDEN_W * GOLDEN_H,
+        "{same} of {} pixels went out unblurred",
+        GOLDEN_W * GOLDEN_H
+    );
+}
+
+#[test]
+fn a_failed_model_still_turns_blur_off() {
+    // Not loading but gone for good: logged as disabled, frame untouched.
+    let mut fx = offline_effects(Settings {
+        blur_enabled: true,
+        ..Settings::default()
+    });
+    let mut img = golden_frame(0);
+    fx.process(&mut img, GOLDEN_W, GOLDEN_H);
+    assert_eq!(img, golden_frame(0));
+}

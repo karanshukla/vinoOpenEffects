@@ -79,6 +79,8 @@ pub struct Effects {
     gestures: GestureDetector,
     /// Reverse-rain emoji particle system (manual + gesture triggers).
     reactions: Reactions,
+    /// An all-background mask, for hiding the frame until a real one exists.
+    hidden: Vec<u8>,
 }
 
 impl Effects {
@@ -170,6 +172,25 @@ impl Effects {
             .ensure(&mut self.engine, self.frame, img, w, h, w * 4, is_roi);
         self.mask.refine(img, w, h);
         let Some(lut) = self.mask.lut(w, h) else {
+            // No mask yet: the selfie model is still loading (every camera
+            // session starts a fresh engine, and the first NPU run took
+            // 365 ms with a cold cache) or the first segmentation failed.
+            // Blur and replace treat the whole frame as background meanwhile,
+            // rather than send it untouched. A model that failed to load for
+            // good turns them off instead, as logged.
+            if self.settings.needs_composite() && !self.engine.selfie_failed() {
+                self.hidden.clear();
+                self.hidden.resize(w * h, 0);
+                composite(
+                    &mut self.bg,
+                    &mut self.blur,
+                    &self.settings,
+                    img,
+                    &self.hidden,
+                    w,
+                    h,
+                );
+            }
             return;
         };
         let s = &self.settings;
@@ -185,13 +206,25 @@ impl Effects {
                 s.studio_bg_brightness,
             );
         }
-        if !s.needs_composite() {
-            return;
+        if s.needs_composite() {
+            composite(&mut self.bg, &mut self.blur, s, img, lut, w, h);
         }
-        if s.bg_enabled {
-            self.bg.composite(img, lut, &s.bg_path, w, h);
-        } else {
-            self.blur.blur_background(img, lut, w, h, s.blur_strength);
-        }
+    }
+}
+
+/// Background replace if it's on, else portrait blur, over `lut`'s background.
+fn composite(
+    bg: &mut Background,
+    blur: &mut BlurScratch,
+    s: &Settings,
+    img: &mut [u8],
+    lut: &[u8],
+    w: usize,
+    h: usize,
+) {
+    if s.bg_enabled {
+        bg.composite(img, lut, &s.bg_path, w, h);
+    } else {
+        blur.blur_background(img, lut, w, h, s.blur_strength);
     }
 }
