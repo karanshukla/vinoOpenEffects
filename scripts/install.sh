@@ -8,7 +8,7 @@
 #
 # Installs binaries, D-Bus interfaces and activation file, the systemd user
 # unit, desktop entry and icons, fetches the sha256-verified ONNX models, and
-# has ovfetch (>= 0.4.0, the only source of onnxruntime) install the runtime
+# has ovfetch (>= 0.5.0, the only source of onnxruntime) install the runtime
 # into lib/vinoopeneffects/ort, keeping a verified ovfetch install it won't replace.
 set -euo pipefail
 
@@ -19,7 +19,7 @@ prefix="$HOME/.local"
 gui=1
 models=1
 ovfetch_args=()
-ovfetch_min=0.4.0
+ovfetch_min=0.5.0
 while [ $# -gt 0 ]; do
     case "$1" in
         --prefix) prefix="${2:?--prefix needs a directory}"; shift 2 ;;

@@ -13,7 +13,7 @@ is easier from a checkout, and packaging will come back later.
 - For the GUI: libadwaita 1.7 or newer, and `gtk4paintablesink` for the live
   preview (`gstreamer1-plugin-gtk4` on Fedora, `gstreamer1.0-gtk4` on
   Debian/Ubuntu, `gst-plugin-gtk4` on Arch). Use `--no-gui` without them.
-- [ovfetch](https://github.com/karanshukla/ovfetch) 0.4.0 or newer
+- [ovfetch](https://github.com/karanshukla/ovfetch) 0.5.0 or newer
   (`cargo install ovfetch --locked`), on every machine: it is the only source of
   onnxruntime
 - x86_64 has been tested; nothing else has
@@ -40,7 +40,7 @@ It builds a release and installs:
 | Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests; ones already present and verified are skipped |
 
 **ovfetch decides the runtime.** `install.sh` stops before building if ovfetch
-is missing or older than 0.4.0, then runs `ovfetch install` before installing
+is missing or older than 0.5.0, then runs `ovfetch install` before installing
 anything else. ovfetch picks the OpenVINO build of onnxruntime that fits the
 machine's NPU and driver, or the newest one on a machine without an NPU; that
 build also carries the CPU provider, so the same runtime serves CPU inference.
