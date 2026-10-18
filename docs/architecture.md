@@ -314,6 +314,10 @@ once and drops them, so OpenVINO's compile cache
 that fails to load is remembered as failed and logged once rather than retried
 every frame.
 
+Blur and background replace never pass those frames through untouched: until
+the first mask exists they treat the whole frame as background, so it goes out
+fully blurred or as only the replacement.
+
 **The runtime is loaded, not linked.** The default `npu` feature loads
 `libonnxruntime.so` at start, from `ORT_DYLIB_PATH`, else the first of
 `~/.local/share/vinoopeneffects/ort`, `~/.local/lib/vinoopeneffects/ort`,

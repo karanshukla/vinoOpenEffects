@@ -54,7 +54,8 @@ and `vinoopeneffects-ctl doctor` repeats the check on demand.
 - **Apps that open the real camera.** An app that picks your webcam instead of
   the virtual camera gets the raw feed, with no effects.
 - **The mask missing.** Background blur and replacement are cosmetic, not a
-  privacy guarantee. Segmentation can miss at the edges, in fast motion, or on
-  the first frames after the camera opens, and briefly show what is behind you.
+  privacy guarantee. Segmentation can miss at the edges or in fast motion, and
+  briefly show what is behind you. (While the model loads after the camera
+  opens, the whole frame is blurred or replaced rather than shown.)
   Don't rely on them to hide something that must not be seen.
 - **Anyone with root.**

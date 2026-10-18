@@ -452,6 +452,12 @@ impl Engine {
         };
     }
 
+    /// The selfie model failed to load and won't be retried, so the effects
+    /// that need it are off (as opposed to still loading).
+    pub fn selfie_failed(&self) -> bool {
+        self.selfie.failed
+    }
+
     pub fn selfie(&mut self) -> Option<&mut SelfieSeg> {
         let mut fb = None;
         match self.selfie.touch(
