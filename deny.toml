@@ -3,6 +3,12 @@ all-features = false
 
 [advisories]
 version = 2
+ignore = [
+    # zbus 5 still depends on these; their code moved into zbus 6, which we have not migrated to yet.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained; folded into zbus 6, no fix for zbus 5" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained; folded into zbus 6, no fix for zbus 5" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained; folded into zbus 6, no fix for zbus 5" },
+]
 
 [licenses]
 version = 2
