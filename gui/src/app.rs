@@ -210,53 +210,93 @@ pub fn build_window(
     window.present();
 }
 
-/// Press-and-hold on `button` bypasses every effect until release, so the
-/// preview shows the untouched camera. Does nothing while effects are already
-/// off. The gesture claims the press so the release always reaches it, even
-/// when the pointer leaves the button.
+/// Press-and-hold on `button` (or holding Space/Enter while it has focus)
+/// bypasses every effect until release, so the preview shows the untouched
+/// camera. Does nothing while effects are already off. The gesture claims the
+/// press so the release always reaches it, even when the pointer leaves the
+/// button.
 fn wire_compare(
     button: &gtk::Button,
     bypass_switch: &gtk::Switch,
     cmd_tx: &CmdTx,
     comparing: &Rc<Cell<bool>>,
 ) {
-    let gesture = gtk::GestureClick::new();
-    gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
-    {
+    let start = {
+        let button = button.clone();
         let bypass_switch = bypass_switch.clone();
         let cmd_tx = cmd_tx.clone();
         let comparing = Rc::clone(comparing);
-        gesture.connect_pressed(move |gesture, _, _, _| {
-            gesture.set_state(gtk::EventSequenceState::Claimed);
+        move || {
             if !bypass_switch.is_active() || comparing.get() {
                 return;
             }
             comparing.set(true);
-            if let Some(widget) = gesture.widget() {
-                widget.add_css_class("oe-comparing");
-            }
+            button.add_css_class("oe-comparing");
             let _ = cmd_tx.send(GuiCommand::SetBypass { on: true });
-        });
-    }
+        }
+    };
     let end = {
+        let button = button.clone();
         let cmd_tx = cmd_tx.clone();
         let comparing = Rc::clone(comparing);
-        move |gesture: &gtk::GestureClick| {
+        move || {
             if !comparing.replace(false) {
                 return;
             }
-            if let Some(widget) = gesture.widget() {
-                widget.remove_css_class("oe-comparing");
-            }
+            button.remove_css_class("oe-comparing");
             let _ = cmd_tx.send(GuiCommand::SetBypass { on: false });
         }
     };
+
+    let gesture = gtk::GestureClick::new();
+    gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
+    {
+        let start = start.clone();
+        gesture.connect_pressed(move |gesture, _, _, _| {
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            start();
+        });
+    }
     {
         let end = end.clone();
-        gesture.connect_released(move |gesture, _, _, _| end(gesture));
+        gesture.connect_released(move |_, _, _, _| end());
     }
-    gesture.connect_cancel(move |gesture, _| end(gesture));
+    {
+        let end = end.clone();
+        gesture.connect_cancel(move |_, _| end());
+    }
     button.add_controller(gesture);
+
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    keys.connect_key_pressed(move |_, key, _, _| {
+        if !is_activate_key(key) {
+            return glib::Propagation::Proceed;
+        }
+        start();
+        glib::Propagation::Stop
+    });
+    {
+        let end = end.clone();
+        keys.connect_key_released(move |_, key, _, _| {
+            if is_activate_key(key) {
+                end();
+            }
+        });
+    }
+    button.add_controller(keys);
+
+    // Tabbing away mid-hold never delivers the key release.
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| end());
+    button.add_controller(focus);
+}
+
+fn is_activate_key(key: gtk::gdk::Key) -> bool {
+    matches!(
+        key,
+        gtk::gdk::Key::space | gtk::gdk::Key::Return | gtk::gdk::Key::KP_Enter
+    )
 }
 
 fn set_effects_label(label: &gtk::Label, on: bool) {
@@ -264,27 +304,33 @@ fn set_effects_label(label: &gtk::Label, on: bool) {
 }
 
 /// App-wide styling for the preview frame, its floating pills and the
-/// effect-card icons.
+/// effect-card icons. Font sizes are relative so they follow text scaling;
+/// `a11y_tests` checks the text colours' contrast, over any video frame.
+pub(crate) const APP_CSS: &str = ".oe-preview-frame { border-radius: 18px; background-color: #0b0b0d; } \
+     .oe-preview-status { color: #d8d8de; } \
+     .oe-pill, .oe-pill-button, .oe-pill-dropdown > button { \
+       border-radius: 999px; min-height: 34px; padding: 0 12px; \
+       background-color: rgba(14, 14, 17, 0.66); color: #f2f2f5; \
+       border: 1px solid rgba(255, 255, 255, 0.14); font-size: 0.9em; } \
+     .oe-pill-button:hover, .oe-pill-dropdown > button:hover { \
+       background-color: rgba(30, 30, 36, 0.8); } \
+     .oe-pill-button.oe-comparing { background-color: rgba(60, 60, 70, 0.9); } \
+     .oe-live-dot { min-width: 8px; min-height: 8px; border-radius: 50%; \
+       background-color: @success_color; } \
+     .oe-effect-icon { min-width: 38px; min-height: 38px; border-radius: 10px; \
+       background-color: alpha(currentColor, 0.08); } \
+     .oe-effect-icon.oe-on { background-color: alpha(@success_color, 0.16); \
+       color: @success_color; } \
+     .oe-emoji-btn { font-size: 1.65em; min-height: 52px; padding: 0; } \
+     @media (prefers-contrast: more) { \
+       .oe-pill, .oe-pill-button, .oe-pill-dropdown > button { \
+         background-color: rgba(0, 0, 0, 0.9); color: #ffffff; \
+         border: 1px solid #ffffff; } \
+       .oe-preview-status { color: #ffffff; } }";
+
 fn install_css() {
     let provider = gtk::CssProvider::new();
-    provider.load_from_string(
-        ".oe-preview-frame { border-radius: 18px; background-color: #0b0b0d; } \
-         .oe-preview-status { color: #d8d8de; } \
-         .oe-pill, .oe-pill-button, .oe-pill-dropdown > button { \
-           border-radius: 999px; min-height: 34px; padding: 0 12px; \
-           background-color: rgba(14, 14, 17, 0.66); color: #f2f2f5; \
-           border: 1px solid rgba(255, 255, 255, 0.14); font-size: 13px; } \
-         .oe-pill-button:hover, .oe-pill-dropdown > button:hover { \
-           background-color: rgba(30, 30, 36, 0.8); } \
-         .oe-pill-button.oe-comparing { background-color: rgba(60, 60, 70, 0.9); } \
-         .oe-live-dot { min-width: 8px; min-height: 8px; border-radius: 50%; \
-           background-color: @success_color; } \
-         .oe-effect-icon { min-width: 38px; min-height: 38px; border-radius: 10px; \
-           background-color: alpha(currentColor, 0.08); } \
-         .oe-effect-icon.oe-on { background-color: alpha(@success_color, 0.16); \
-           color: @success_color; } \
-         .oe-emoji-btn { font-size: 24px; min-height: 52px; padding: 0; }",
-    );
+    provider.load_from_string(APP_CSS);
     if let Some(display) = gtk::gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,
@@ -294,16 +340,18 @@ fn install_css() {
     }
 }
 
-fn build_primary_menu() -> gtk::MenuButton {
+pub(crate) fn build_primary_menu() -> gtk::MenuButton {
     let menu = gio::Menu::new();
     menu.append(Some("Preferences"), Some("win.preferences"));
     menu.append(Some("About vinoOpenEffects"), Some("win.about"));
-    gtk::MenuButton::builder()
+    let button = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .menu_model(&menu)
         .primary(true)
         .tooltip_text("Main Menu")
-        .build()
+        .build();
+    button.update_property(&[gtk::accessible::Property::Label("Main menu")]);
+    button
 }
 
 fn add_narrow_breakpoint(
@@ -398,8 +446,13 @@ fn apply_status_banner(w: &Widgets, status: &str) {
     };
     match message {
         Some(text) => {
+            let changed = !w.banner.is_revealed() || w.banner.title() != text;
             w.banner.set_title(text);
             w.banner.set_revealed(true);
+            if changed {
+                w.banner
+                    .announce(text, gtk::AccessibleAnnouncementPriority::High);
+            }
         }
         None => w.banner.set_revealed(false),
     }
@@ -521,11 +574,15 @@ fn apply_inference_banner(w: &Widgets, degraded: bool, detail: Option<&str>) {
     let reason = detail
         .filter(|d| !d.is_empty())
         .unwrap_or("the NPU is not usable");
-    w.inference_banner
-        .set_title(&glib::markup_escape_text(&format!(
-            "Effects run on CPU: {reason}"
-        )));
+    let message = format!("Effects run on CPU: {reason}");
+    let title = glib::markup_escape_text(&message);
+    let changed = !w.inference_banner.is_revealed() || w.inference_banner.title() != title;
+    w.inference_banner.set_title(&title);
     w.inference_banner.set_revealed(true);
+    if changed {
+        w.inference_banner
+            .announce(&message, gtk::AccessibleAnnouncementPriority::Medium);
+    }
 }
 
 fn apply_inference_changed(w: &Widgets, active: &str, detail: &str) {

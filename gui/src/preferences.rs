@@ -105,6 +105,7 @@ pub fn build(
     inference_group.add(inference_toggle_cpu.clone());
     inference_group.add(inference_toggle_npu.clone());
     inference_group.set_active_name(Some("auto"));
+    inference_group.update_property(&[gtk::accessible::Property::Label("Execution provider")]);
 
     let inference_badge = gtk::Label::builder()
         .label("Active: CPU")

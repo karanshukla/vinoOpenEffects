@@ -24,7 +24,7 @@ futures-util.workspace = true
 
 async-channel = "2"
 
-gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_7"] }
 gstreamer.workspace = true
 

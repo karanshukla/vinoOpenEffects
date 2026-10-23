@@ -140,6 +140,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         .tooltip_text("Choose Image…")
         .css_classes(["oe-swatch-btn", "flat"])
         .build();
+    browse.update_property(&[gtk::accessible::Property::Label("Choose image")]);
     let browse_child = image_box_child(CUSTOM_IMAGE_CLASS);
     browse_child.append(&plus_icon());
     browse.set_child(Some(&browse_child));
@@ -188,6 +189,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         .tooltip_text("Custom color…")
         .css_classes(["oe-swatch-btn", "flat"])
         .build();
+    custom.update_property(&[gtk::accessible::Property::Label("Custom color")]);
     let custom_child = swatch_box_child(CUSTOM_SWATCH_CLASS);
     custom_child.append(&plus_icon());
     custom.set_child(Some(&custom_child));
@@ -457,6 +459,7 @@ fn swatch_button(class: &str, tooltip: &str) -> gtk::ToggleButton {
         .tooltip_text(tooltip)
         .css_classes(["oe-swatch-btn", "flat"])
         .build();
+    button.update_property(&[gtk::accessible::Property::Label(tooltip)]);
     button.set_child(Some(&swatch_box_child(class)));
     button
 }
@@ -476,12 +479,14 @@ fn swatch_box_child(class: &str) -> gtk::Box {
 /// regardless of the box's own size. Used by the custom-color and
 /// custom-image buttons.
 fn plus_icon() -> gtk::Image {
-    let icon = gtk::Image::from_icon_name("list-add-symbolic");
-    icon.set_halign(gtk::Align::Center);
-    icon.set_valign(gtk::Align::Center);
-    icon.set_hexpand(true);
-    icon.set_vexpand(true);
-    icon
+    gtk::Image::builder()
+        .icon_name("list-add-symbolic")
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .hexpand(true)
+        .vexpand(true)
+        .accessible_role(gtk::AccessibleRole::Presentation)
+        .build()
 }
 
 /// A toggle button showing a built-in background-image thumbnail.
@@ -490,12 +495,16 @@ fn image_preset_button(label: &str, path: &std::path::Path) -> gtk::ToggleButton
         .tooltip_text(label)
         .css_classes(["oe-swatch-btn", "flat"])
         .build();
-    let picture = gtk::Picture::for_filename(path);
-    picture.set_content_fit(gtk::ContentFit::Cover);
-    picture.set_can_shrink(true);
-    picture.set_width_request(IMAGE_THUMB_WIDTH);
-    picture.set_height_request(IMAGE_THUMB_HEIGHT);
-    picture.add_css_class("oe-bg-thumb");
+    button.update_property(&[gtk::accessible::Property::Label(label)]);
+    let picture = gtk::Picture::builder()
+        .file(&gio::File::for_path(path))
+        .content_fit(gtk::ContentFit::Cover)
+        .can_shrink(true)
+        .width_request(IMAGE_THUMB_WIDTH)
+        .height_request(IMAGE_THUMB_HEIGHT)
+        .css_classes(["oe-bg-thumb"])
+        .accessible_role(gtk::AccessibleRole::Presentation)
+        .build();
     button.set_child(Some(&picture));
     button
 }
@@ -546,7 +555,9 @@ fn install_swatch_css() {
          .oe-swatch-btn { padding: 4px; min-width: 0; min-height: 0; } \
          .oe-bg-thumb { border-radius: 10px; border: 1px solid alpha(currentColor, 0.2); \
          overflow: hidden; } \
-         .oe-custom-image { background-color: alpha(currentColor, 0.08); }",
+         .oe-custom-image { background-color: alpha(currentColor, 0.08); } \
+         @media (prefers-contrast: more) { \
+           .oe-swatch, .oe-bg-thumb { border-color: alpha(currentColor, 0.6); } }",
     );
     for (i, (_, hex)) in BG_PRESETS.iter().enumerate() {
         css.push_str(&format!(" .oe-swatch-{i} {{ background-color: {hex}; }}"));

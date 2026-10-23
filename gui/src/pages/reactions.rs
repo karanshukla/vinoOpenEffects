@@ -43,6 +43,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
             .tooltip_text(*tooltip)
             .css_classes(["oe-emoji-btn"])
             .build();
+        button.update_property(&[gtk::accessible::Property::Label(tooltip)]);
         let cmd_tx = cmd_tx.clone();
         let id = (*id).to_string();
         button.connect_clicked(move |_| {

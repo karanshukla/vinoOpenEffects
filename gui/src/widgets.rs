@@ -54,6 +54,7 @@ pub fn toggle_row(
         .valign(gtk::Align::Center)
         .css_classes(["round"])
         .build();
+    group.update_property(&[gtk::accessible::Property::Label(title)]);
     for (name, label) in options {
         group.add(adw::Toggle::builder().name(*name).label(*label).build());
     }
@@ -77,6 +78,8 @@ pub fn toggle_row(
 /// which blocks the handler so daemon echoes don't loop back as new commands.
 pub struct SliderCtl {
     adjustment: gtk::Adjustment,
+    scale: gtk::Scale,
+    spin: gtk::SpinButton,
     handler: glib::SignalHandlerId,
     /// When the user last moved this slider (drives the echo holdoff).
     last_input: Rc<Cell<Option<Instant>>>,
@@ -95,6 +98,18 @@ impl SliderCtl {
         self.adjustment.block_signal(&self.handler);
         self.adjustment.set_value(value);
         self.adjustment.unblock_signal(&self.handler);
+    }
+
+    /// Replace the screen-reader name (the visible title by default), for a
+    /// title that repeats elsewhere in the card, e.g. a second "Brightness".
+    pub fn set_accessible_name(&self, name: &str) {
+        for widget in [
+            self.scale.upcast_ref::<gtk::Widget>(),
+            self.spin.upcast_ref(),
+        ] {
+            widget.reset_relation(gtk::AccessibleRelation::LabelledBy);
+            widget.update_property(&[gtk::accessible::Property::Label(name)]);
+        }
     }
 }
 
@@ -155,6 +170,11 @@ fn slider_row(
         .spacing(4)
         .build();
     body.append(&header);
+    for widget in [scale.upcast_ref::<gtk::Widget>(), spin.upcast_ref()] {
+        widget.update_relation(&[gtk::accessible::Relation::LabelledBy(&[
+            title_label.upcast_ref()
+        ])]);
+    }
     if !subtitle.is_empty() {
         let sub = gtk::Label::builder()
             .label(subtitle)
@@ -162,6 +182,9 @@ fn slider_row(
             .wrap(true)
             .css_classes(["caption", "dim-label"])
             .build();
+        for widget in [scale.upcast_ref::<gtk::Widget>(), spin.upcast_ref()] {
+            widget.update_relation(&[gtk::accessible::Relation::DescribedBy(&[sub.upcast_ref()])]);
+        }
         body.append(&sub);
     }
     body.append(&scale);
@@ -197,6 +220,8 @@ fn slider_row(
         plain_row(&body),
         SliderCtl {
             adjustment,
+            scale,
+            spin,
             handler,
             last_input,
         },
@@ -258,6 +283,7 @@ pub fn section_label(text: &str) -> gtk::Label {
         .label(text)
         .xalign(0.0)
         .css_classes(["caption-heading", "dim-label"])
+        .accessible_role(gtk::AccessibleRole::Heading)
         .build()
 }
 
@@ -283,6 +309,7 @@ impl EffectCard {
             .pixel_size(20)
             .valign(gtk::Align::Center)
             .css_classes(["oe-effect-icon"])
+            .accessible_role(gtk::AccessibleRole::Presentation)
             .build();
         let switch = gtk::Switch::builder()
             .valign(gtk::Align::Center)
