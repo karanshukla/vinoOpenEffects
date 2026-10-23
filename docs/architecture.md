@@ -292,8 +292,8 @@ hold-to-confirm debounce turns a held gesture into one reaction.
 
 ONNX Runtime through the `ort` crate. Models are found by
 `<dir>/<id>/manifest.toml` in `~/.local/share/vinoopeneffects/models`, then
-`/usr/share/vinoopeneffects/models`, and verified against the manifest's
-sha256.
+`share/vinoopeneffects/models` under the binary's prefix, `/usr/local/share`
+and `/usr/share`, and verified against the manifest's sha256.
 
 | Model | Input | Used by |
 |---|---|---|
