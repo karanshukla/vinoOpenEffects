@@ -338,15 +338,9 @@ fn every_control_has_an_accessible_name() {
 
     audit.check(build_primary_menu().upcast_ref());
 
-    let (dialog, _prefs) = preferences::build(&cmd_tx, Rc::new(RefCell::new(GuiConfig::default())));
-    let pages: Vec<_> = descendants(dialog.upcast_ref())
-        .into_iter()
-        .filter(|w| w.is::<adw::PreferencesPage>())
-        .collect();
-    assert!(!pages.is_empty(), "no preferences page found");
-    for page in &pages {
-        audit.check(page);
-    }
+    let (page, _prefs) =
+        preferences::build_page(&cmd_tx, Rc::new(RefCell::new(GuiConfig::default())));
+    audit.check(page.upcast_ref());
 
     // Guards against the walk silently finding nothing.
     assert!(

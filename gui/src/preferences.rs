@@ -43,7 +43,17 @@ pub fn build(
     let dialog = adw::PreferencesDialog::builder()
         .title("Preferences")
         .build();
+    let (page, widgets) = build_page(cmd_tx, gui_config);
+    dialog.add(&page);
+    (dialog, widgets)
+}
 
+/// The dialog's one page, separate so tests can walk it: an unpresented
+/// dialog doesn't parent its pages.
+pub(crate) fn build_page(
+    cmd_tx: &CmdTx,
+    gui_config: Rc<RefCell<GuiConfig>>,
+) -> (adw::PreferencesPage, Widgets) {
     let page = adw::PreferencesPage::builder()
         .title("General")
         .icon_name("preferences-system-symbolic")
@@ -191,10 +201,8 @@ pub fn build(
 
     page.add(&startup);
 
-    dialog.add(&page);
-
     (
-        dialog,
+        page,
         Widgets {
             camera_combo,
             camera_handler,
