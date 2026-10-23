@@ -17,7 +17,7 @@ sudo dnf install gcc pkgconf-pkg-config clang-devel \
 
 # Debian / Ubuntu (what CI uses)
 sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-  libgstreamer-plugins-bad1.0-dev libgtk-4-dev libadwaita-1-dev \
+  libgtk-4-dev libadwaita-1-dev \
   libpipewire-0.3-dev libspa-0.2-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
 ```
 
