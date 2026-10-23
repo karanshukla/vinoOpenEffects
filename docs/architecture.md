@@ -189,7 +189,8 @@ falls under it and smears. Each block takes the most-moving of its neighbours,
 so a still block beside a moving edge doesn't trail into it, and a pixel whose
 own change reaches 24 levels (`PIXEL_MOVING`) passes through regardless, for
 thin edges a block average would miss. The history resets on a resolution
-change or a skipped frame.
+change, a skipped frame, or the filter going passthrough (no effect on, so
+frames stop reaching it and the frame count stalls).
 
 The history keeps 8 fractional bits. Auto light reads that instead of the
 rounded frame, so a 6× gain multiplies the averaged value and rounds to u8
