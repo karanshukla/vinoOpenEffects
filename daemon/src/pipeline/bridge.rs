@@ -10,6 +10,7 @@
 //! across the GStreamer streaming thread and the PipeWire loop thread via `Arc`.
 
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 /// Latest processed frame in the fixed pipeline format (I420, see
 /// [`super::FRAME_SIZE`]). `None` until the first frame arrives, or after
@@ -17,18 +18,26 @@ use std::sync::Mutex;
 #[derive(Default)]
 pub struct Bridge {
     latest: Mutex<Option<Vec<u8>>>,
+    stored_at: Mutex<Option<Instant>>,
 }
 
 impl Bridge {
     pub fn new() -> Self {
         Self {
             latest: Mutex::new(None),
+            stored_at: Mutex::new(None),
         }
     }
 
     /// Store the newest processed frame, dropping any previous one.
     pub fn store(&self, frame: Vec<u8>) {
         *self.latest.lock().unwrap() = Some(frame);
+        *self.stored_at.lock().unwrap() = Some(Instant::now());
+    }
+
+    /// Time since the last [`Self::store`], or `None` if nothing was stored since the last clear.
+    pub fn age(&self) -> Option<Duration> {
+        self.stored_at.lock().unwrap().map(|t| t.elapsed())
     }
 
     /// Copy the latest frame's bytes into `dst`, returning the number of bytes
@@ -45,6 +54,7 @@ impl Bridge {
     /// pipeline stops and before it produces its first new frame on reconnect.
     pub fn clear(&self) {
         *self.latest.lock().unwrap() = None;
+        *self.stored_at.lock().unwrap() = None;
     }
 }
 
@@ -62,8 +72,11 @@ mod tests {
         assert_eq!(bridge.copy_latest(&mut dst), Some(4));
         assert_eq!(dst, [1, 2, 3, 4]);
 
+        assert!(bridge.age().is_some());
+
         bridge.clear();
         assert_eq!(bridge.copy_latest(&mut dst), None);
+        assert_eq!(bridge.age(), None);
     }
 
     #[test]

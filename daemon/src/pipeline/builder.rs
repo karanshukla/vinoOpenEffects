@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::Sender as StdSender;
 
 use anyhow::{Context, Result};
 use gst::prelude::*;
@@ -8,7 +10,7 @@ use shared::config::AppState;
 use tracing::{info, warn};
 
 use super::bridge::Bridge;
-use super::{PipelineFormat, cameras, effects};
+use super::{PipelineFormat, WorkerMsg, cameras, effects};
 
 /// The GStreamer half of the virtual camera: it captures the real webcam, runs
 /// the effects bin, and hands each processed frame to the [`Bridge`] via an
@@ -17,7 +19,11 @@ use super::{PipelineFormat, cameras, effects};
 /// consumer is connected; building it opens the camera, dropping it releases it.
 pub struct BuiltCapture {
     pipeline: gst::Pipeline,
+    id: u64,
+    built_at: std::time::Instant,
 }
+
+static NEXT_CAPTURE_ID: AtomicU64 = AtomicU64::new(0);
 
 const PLAYING_TIMEOUT: gst::ClockTime = gst::ClockTime::from_seconds(5);
 
@@ -44,6 +50,44 @@ impl BuiltCapture {
             return Err(anyhow::anyhow!("pipeline failed to reach PLAYING"));
         }
         Ok(())
+    }
+
+    /// Tells [`WorkerMsg::CaptureFailed`] from an earlier, already replaced pipeline apart.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn age(&self) -> std::time::Duration {
+        self.built_at.elapsed()
+    }
+
+    /// After [`Self::start`]: report the first runtime error or EOS (the camera
+    /// unplugged mid-stream) to the worker, and drop every other bus message so
+    /// the unwatched bus doesn't queue them for the pipeline's lifetime.
+    pub fn watch_bus(&self, worker: StdSender<WorkerMsg>) {
+        let Some(bus) = self.pipeline.bus() else {
+            return;
+        };
+        let id = self.id;
+        let fired = AtomicBool::new(false);
+        let report = move |msg: &gst::Message| {
+            let Some(error) = runtime_failure(msg) else {
+                return;
+            };
+            if !fired.swap(true, Ordering::Relaxed) {
+                let _ = worker.send(WorkerMsg::CaptureFailed { id, error });
+            }
+        };
+        let report = Arc::new(report);
+        let handler = Arc::clone(&report);
+        bus.set_sync_handler(move |_, msg| {
+            handler(msg);
+            gst::BusSyncReply::Drop
+        });
+        // Anything posted before the handler went in is still queued.
+        while let Some(msg) = bus.pop() {
+            report(&msg);
+        }
     }
 
     pub fn stop(self) {
@@ -225,7 +269,28 @@ pub fn build_capture_pipeline(
         appsink.upcast_ref(),
     ])?;
 
-    Ok(BuiltCapture { pipeline })
+    Ok(BuiltCapture {
+        pipeline,
+        id: NEXT_CAPTURE_ID.fetch_add(1, Ordering::Relaxed),
+        built_at: std::time::Instant::now(),
+    })
+}
+
+fn runtime_failure(msg: &gst::Message) -> Option<String> {
+    match msg.view() {
+        gst::MessageView::Error(err) => Some(describe_error(err)),
+        gst::MessageView::Eos(_) => Some("camera stream ended".into()),
+        _ => None,
+    }
+}
+
+fn describe_error(err: &gst::message::Error) -> String {
+    let src = err
+        .src()
+        .map(|s| s.path_string().to_string())
+        .unwrap_or_else(|| "<unknown>".into());
+    let debug = err.debug().map(|d| format!(" [{d}]")).unwrap_or_default();
+    format!("{src}: {}{debug}", err.error())
 }
 
 fn drain_bus_error(pipeline: &gst::Pipeline) -> Option<String> {
@@ -236,12 +301,7 @@ fn drain_bus_error(pipeline: &gst::Pipeline) -> Option<String> {
             continue;
         };
         if let gst::MessageView::Error(err) = msg.view() {
-            let src = err
-                .src()
-                .map(|s| s.path_string().to_string())
-                .unwrap_or_else(|| "<unknown>".into());
-            let debug = err.debug().map(|d| format!(" [{d}]")).unwrap_or_default();
-            return Some(format!("{src}: {}{debug}", err.error()));
+            return Some(describe_error(err));
         }
     }
     None
@@ -287,4 +347,61 @@ fn build_source(app: &AppState) -> Result<gst::Element> {
         .property_from_str("pattern", "smpte")
         .build()
         .context("create videotestsrc fallback")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failure(rx: &std::sync::mpsc::Receiver<WorkerMsg>) -> Option<(u64, String)> {
+        match rx.try_recv().ok()? {
+            WorkerMsg::CaptureFailed { id, error } => Some((id, error)),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn bus_watch_reports_the_first_runtime_error_once() {
+        gst::init().unwrap();
+        let capture = BuiltCapture {
+            pipeline: gst::Pipeline::new(),
+            id: 7,
+            built_at: std::time::Instant::now(),
+        };
+        let bus = capture.pipeline.bus().unwrap();
+        let post_error = || {
+            let msg = gst::message::Error::builder(gst::ResourceError::Read, "No such device")
+                .src(&capture.pipeline)
+                .build();
+            bus.post(msg).unwrap();
+        };
+        // Posted before the watch: still reported.
+        post_error();
+        let (tx, rx) = std::sync::mpsc::channel();
+        capture.watch_bus(tx);
+        let (id, error) = failure(&rx).expect("queued error was not reported");
+        assert_eq!(id, 7);
+        assert!(error.contains("No such device"), "{error}");
+
+        post_error();
+        assert!(failure(&rx).is_none(), "a second error was reported");
+        assert!(bus.pop().is_none(), "the watched bus still queues messages");
+    }
+
+    #[test]
+    fn bus_watch_reports_eos() {
+        gst::init().unwrap();
+        let capture = BuiltCapture {
+            pipeline: gst::Pipeline::new(),
+            id: 1,
+            built_at: std::time::Instant::now(),
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        capture.watch_bus(tx);
+        let bus = capture.pipeline.bus().unwrap();
+        bus.post(gst::message::Latency::new()).unwrap();
+        assert!(failure(&rx).is_none(), "latency counted as a failure");
+        bus.post(gst::message::Eos::new()).unwrap();
+        assert!(failure(&rx).is_some(), "EOS was not reported");
+    }
 }
