@@ -107,6 +107,13 @@ pub fn runtime_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     if let Some(h) = home {
         dirs.push(h.join(".local/lib/vinoopeneffects/ort"));
     }
+    // Same as the daemon's search: the binary's own prefix, for `--prefix DIR` installs.
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(prefix) = exe.parent().and_then(Path::parent)
+    {
+        dirs.push(prefix.join("lib/vinoopeneffects/ort"));
+        dirs.push(prefix.join("lib64/vinoopeneffects/ort"));
+    }
     dirs.push(PathBuf::from("/usr/lib/vinoopeneffects/ort"));
     dirs.push(PathBuf::from("/usr/lib64/vinoopeneffects/ort"));
     dirs.push(PathBuf::from("/usr/local/lib/vinoopeneffects/ort"));

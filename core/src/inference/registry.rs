@@ -11,13 +11,13 @@ pub struct ResolvedModel {
 }
 
 /// Model search directories, in PRD §9.3 priority order: per-user data dir,
-/// system-wide data dir.
+/// then the system-wide ones.
 pub fn search_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(data_dir) = dirs::data_dir() {
         dirs.push(data_dir.join("vinoopeneffects/models"));
     }
-    dirs.push(PathBuf::from("/usr/share/vinoopeneffects/models"));
+    dirs.extend(shared::doctor::models::system_model_dirs());
     dirs
 }
 

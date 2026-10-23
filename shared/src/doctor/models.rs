@@ -161,8 +161,27 @@ pub fn model_search_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     if let Some(h) = home {
         dirs.push(h.join(".local/share/vinoopeneffects/models"));
     }
-    dirs.push(PathBuf::from("/usr/share/vinoopeneffects/models"));
-    dirs.push(PathBuf::from("/usr/local/share/vinoopeneffects/models"));
+    dirs.extend(system_model_dirs());
+    dirs
+}
+
+/// Where a system-wide install puts the models: the running binary's prefix
+/// (`sudo scripts/install.sh --prefix DIR` writes `DIR/share/...`), then the
+/// usual prefixes. The daemon searches these after the per-user directory.
+pub fn system_model_dirs() -> Vec<PathBuf> {
+    let exe_prefix = std::env::current_exe()
+        .ok()
+        .and_then(|exe| Some(exe.parent()?.parent()?.to_path_buf()));
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for prefix in exe_prefix
+        .into_iter()
+        .chain([PathBuf::from("/usr/local"), PathBuf::from("/usr")])
+    {
+        let dir = prefix.join("share/vinoopeneffects/models");
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
     dirs
 }
 
@@ -200,6 +219,22 @@ pub fn probe_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn system_model_dirs_cover_both_prefixes_once() {
+        let dirs = system_model_dirs();
+        for want in [
+            "/usr/local/share/vinoopeneffects/models",
+            "/usr/share/vinoopeneffects/models",
+        ] {
+            assert_eq!(
+                dirs.iter()
+                    .filter(|d| d.as_path() == Path::new(want))
+                    .count(),
+                1
+            );
+        }
+    }
 
     #[test]
     fn test_model_verdict_verified() {

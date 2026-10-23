@@ -21,8 +21,24 @@ bindir="$prefix/bin"
 datadir="$prefix/share"
 app_id=io.github.karanshukla.vinoopeneffects
 
+as_root=0
+[ "$(id -u)" = 0 ] && as_root=1
+
+# As root, --user would reach root's session, not the one running the daemon.
+user_session() {
+    if [ "$as_root" = 0 ]; then
+        "$@"
+    elif [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+        uid="$(id -u "$SUDO_USER")"
+        sudo -u "$SUDO_USER" XDG_RUNTIME_DIR="/run/user/$uid" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@"
+    else
+        return 1
+    fi
+}
+
 if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user disable --now vinoopeneffects-daemon.service >/dev/null 2>&1 || true
+    user_session systemctl --user disable --now vinoopeneffects-daemon.service >/dev/null 2>&1 || true
 fi
 
 rm -f "$bindir/vinoopeneffects-daemon" "$bindir/vinoopeneffects-ctl" "$bindir/vinoopeneffects"
@@ -34,6 +50,11 @@ rm -f "$datadir/icons/hicolor/scalable/apps/$app_id.svg"
 rm -f "$datadir/icons/hicolor/symbolic/apps/$app_id-symbolic.svg"
 rm -rf "$prefix/lib/vinoopeneffects"
 rmdir "$prefix/lib" 2>/dev/null || true
+# A system-wide install put the models under the prefix; per-user ones go only with --purge.
+if [ "$as_root" = 1 ]; then
+    rm -rf "$datadir/vinoopeneffects/models"
+    rmdir "$datadir/vinoopeneffects" 2>/dev/null || true
+fi
 
 if [ "$purge" = 1 ]; then
     rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/vinoopeneffects" \
@@ -41,11 +62,11 @@ if [ "$purge" = 1 ]; then
 fi
 
 if command -v busctl >/dev/null 2>&1; then
-    busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
+    user_session busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
         org.freedesktop.DBus ReloadConfig >/dev/null 2>&1 || true
 fi
 if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    user_session systemctl --user daemon-reload >/dev/null 2>&1 || true
 fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
     gtk-update-icon-cache -q -t -f "$datadir/icons/hicolor" 2>/dev/null || true

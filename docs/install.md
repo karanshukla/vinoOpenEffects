@@ -25,8 +25,22 @@ scripts/install.sh                          # into ~/.local, no root
 scripts/install.sh --no-gui                 # daemon and CLI only
 scripts/install.sh --no-models              # don't touch models at all
 scripts/install.sh --build-runtime          # let ovfetch compile a newer OpenVINO build
-sudo scripts/install.sh --prefix /usr/local # system-wide
 ```
+
+System-wide, build as yourself first, then install as root. As root the script
+never builds, since that would leave a root-owned `target/` in the checkout:
+
+```bash
+cargo build --release --locked -p vinoopeneffects-daemon -p vinoopeneffects-ctl -p vinoopeneffects
+sudo scripts/install.sh --prefix /usr/local
+```
+
+Under sudo it finds ovfetch in your `~/.cargo/bin` even though sudo's
+`secure_path` drops it (elsewhere: `sudo env PATH="$PATH" scripts/install.sh ...`),
+warns if a source file is newer than the build, puts the models under the
+prefix instead of root's home, and reloads your user session's D-Bus and
+systemd rather than root's. A `CARGO_TARGET_DIR` has to be passed through:
+`sudo CARGO_TARGET_DIR=... scripts/install.sh ...`.
 
 It builds a release and installs:
 
@@ -37,7 +51,7 @@ It builds a release and installs:
 | systemd user unit | `share/systemd/user/vinoopeneffects-daemon.service` |
 | Desktop entry and icons (GUI) | `share/applications/`, `share/icons/hicolor/` |
 | onnxruntime | `lib/vinoopeneffects/ort/`, installed by `ovfetch` (see below) |
-| Models | `~/.local/share/vinoopeneffects/models/`, sha256-verified against the manifests; ones already present and verified are skipped |
+| Models | `~/.local/share/vinoopeneffects/models/`, or `share/vinoopeneffects/models/` under the prefix when run as root; sha256-verified against the manifests, ones already present and verified are skipped |
 
 **ovfetch decides the runtime.** `install.sh` stops before building if ovfetch
 is missing or older than 0.5.0, then runs `ovfetch install` before installing
@@ -68,7 +82,8 @@ with the desktop session instead, see `vinoopeneffects-ctl autostart` in
 - `~/.local/share/vinoopeneffects/backgrounds/`: the preset background images,
   extracted from the GUI binary on first launch
 - `~/.local/share/vinoopeneffects/models/`: the models (the daemon also looks in
-  `/usr/share/vinoopeneffects/models`)
+  `share/vinoopeneffects/models` under its own prefix, `/usr/local/share` and
+  `/usr/share`)
 
 ## Uninstalling
 
@@ -79,7 +94,8 @@ scripts/uninstall.sh --purge                # also models, config and background
 ```
 
 It disables and stops the user unit first, then removes everything
-`install.sh` put under the prefix, including the onnxruntime.
+`install.sh` put under the prefix, including the onnxruntime (and, as root, the
+models under the prefix).
 
 ## Upgrading from openeffects
 
