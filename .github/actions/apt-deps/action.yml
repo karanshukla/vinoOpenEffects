@@ -1,0 +1,65 @@
+name: Install system dependencies
+description: >
+  Build dependencies from apt. The .debs are cached, because some runners get
+  a mirror backend that does 50-100 KB/s; with the cache, a slow mirror only
+  costs anything on a cache miss.
+
+runs:
+  using: composite
+  steps:
+    - id: month
+      shell: bash
+      run: echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+    # Monthly key so the cache follows Ubuntu updates; apt only fetches what changed.
+    - id: restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/apt-debs
+        key: apt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/actions/apt-deps/action.yml') }}-${{ steps.month.outputs.month }}
+        restore-keys: |
+          apt-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/actions/apt-deps/action.yml') }}-
+
+    - id: download
+      name: Download packages
+      shell: bash
+      env:
+        PKGS: >-
+          libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+          libgtk-4-dev libadwaita-1-dev libpipewire-0.3-dev libspa-0.2-dev
+          gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+      run: |
+        export DEBIAN_FRONTEND=noninteractive
+        apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+        for try in 1 2 3; do
+          sudo timeout 120 apt-get $apt_opts update && break
+          [ "$try" = 3 ] && exit 1
+          echo "::warning::apt-get update attempt $try stalled or failed; retrying"
+        done
+        if compgen -G "$HOME/apt-debs/*.deb" > /dev/null; then
+          sudo cp "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+        fi
+        # A slow mirror stalls apt rather than failing it, so time-box each try.
+        # Partial downloads are kept, so each try resumes. The install runs
+        # offline in a later step, so dpkg is never killed halfway.
+        for try in 1 2 3; do
+          sudo timeout 180 apt-get $apt_opts install -y --no-install-recommends --download-only $PKGS && break
+          [ "$try" = 3 ] && exit 1
+          echo "::warning::apt download attempt $try stalled or failed; retrying"
+        done
+        sudo apt-get autoclean -q
+        rm -rf "$HOME/apt-debs" && mkdir -p "$HOME/apt-debs"
+        cp /var/cache/apt/archives/*.deb "$HOME/apt-debs/"
+        echo "pkgs=$PKGS" >> "$GITHUB_OUTPUT"
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/apt-debs
+        key: ${{ steps.restore.outputs.cache-primary-key }}
+
+    - name: Install packages
+      shell: bash
+      env:
+        PKGS: ${{ steps.download.outputs.pkgs }}
+      run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $PKGS
