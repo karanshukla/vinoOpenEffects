@@ -76,9 +76,21 @@ retrying if the first frames are the warmup placeholder. Opening the camera
 takes about 250 ms, so tearing down on every blip would thrash it and never
 deliver a stable stream.
 
-An idle daemon takes no wakeups. The worker blocks on one inbox (daemon commands
-and provide-node state share it) and only uses a timeout while a grace window is
-open. The frame tick thread parks until a consumer is streaming. Releasing the
+If the camera fails while a consumer is streaming (unplugged, or a USB stall),
+the worker drops the capture pipeline and clears the `Bridge`, so the consumer
+gets black frames instead of the last one frozen, and the status goes to
+`error`. Two things catch it: a bus sync handler forwards the pipeline's first
+error or EOS (until then nothing read the bus once it was `PLAYING`), and a
+watchdog fails a capture that delivered no frame for `CAPTURE_STALL` (5 s),
+for stalls that post no error. While the consumer stays, the worker tries the
+camera again every `CAPTURE_RETRY` (2 s), quietly, and the status returns to
+`running` once it opens. It doesn't retry with no camera at all, since that
+would build the `videotestsrc` fallback and swap black for colour bars. A
+camera that fails to open when the consumer connects is retried the same way.
+
+An idle daemon takes no wakeups. The worker blocks on one inbox (daemon commands,
+provide-node state and capture failures share it) and only uses a timeout while
+a grace window, a retry or a streaming capture's watchdog is pending. The frame tick thread parks until a consumer is streaming. Releasing the
 camera also calls `malloc_trim` to hand the frame buffers back to the OS.
 
 ### The provide node
