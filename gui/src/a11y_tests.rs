@@ -16,6 +16,8 @@ use crate::pages::{background, center_stage, reactions, studio_light};
 use crate::{preferences, preview};
 
 const AA_TEXT: f64 = 4.5;
+/// WCAG 1.4.11 minimum for UI component boundaries.
+const AA_UI: f64 = 3.0;
 
 type Rgba = [f64; 4];
 
@@ -153,6 +155,36 @@ fn pill_text_meets_aa_over_any_video() {
     for video in [WHITE, BLACK] {
         let ratio = contrast(fg, over(parse_colour(prop(hc, "background-color")), video));
         assert!(ratio >= AA_TEXT, "high-contrast pill text {ratio:.2}:1");
+    }
+}
+
+/// Opacity of an `alpha(currentColor, a)` colour.
+fn current_colour_alpha(value: &str) -> f64 {
+    value
+        .strip_prefix("alpha(currentColor,")
+        .and_then(|v| v.strip_suffix(')'))
+        .unwrap_or_else(|| panic!("not alpha(currentColor, a): {value:?}"))
+        .trim()
+        .parse()
+        .unwrap()
+}
+
+/// Every preset is dark, so in dark mode the swatch border is the only thing
+/// separating it from the card. Adwaita's dark card (white text) is roughly `#36363a`.
+#[test]
+fn swatch_border_stands_out_on_the_dark_card() {
+    let css = background::SWATCH_CSS;
+    let dark = &css[css
+        .find("@media (prefers-color-scheme: dark)")
+        .expect("SWATCH_CSS has a dark block")..];
+    let alpha = current_colour_alpha(prop(rule(dark, ".oe-swatch"), "border-color"));
+    let card = parse_colour("#36363a");
+    let border = over([255.0, 255.0, 255.0, alpha], card);
+    let ratio = contrast(border, card);
+    assert!(ratio >= AA_UI, "swatch border vs dark card {ratio:.2}:1");
+    for (name, hex) in crate::constants::BG_PRESETS {
+        let ratio = contrast(border, parse_colour(hex));
+        assert!(ratio >= AA_UI, "swatch border vs {name} {ratio:.2}:1");
     }
 }
 
