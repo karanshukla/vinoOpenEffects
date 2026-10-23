@@ -111,6 +111,12 @@ impl Effects {
         self.gestures.reset();
     }
 
+    /// Frames stopped reaching [`Self::process`] (the filter went passthrough),
+    /// so the next one isn't continuous with the denoise history.
+    pub fn pause(&mut self) {
+        self.denoise.reset();
+    }
+
     /// Run every enabled effect over one tight `w`×`h` RGBA frame, in place.
     pub fn process(&mut self, img: &mut [u8], w: usize, h: usize) {
         self.frame = self.frame.wrapping_add(1);
