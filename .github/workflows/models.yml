@@ -48,7 +48,7 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
-          pkgs="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev
+          pkgs="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
             libgtk-4-dev libadwaita-1-dev libpipewire-0.3-dev libspa-0.2-dev
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good"
           # A slow runner mirror stalls apt rather than failing it, so time-box the
