@@ -87,7 +87,7 @@ change is meant to alter the output, update the digest and say so in the PR.
 |---|---|
 | `fmt` | `cargo fmt --all --check` |
 | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| `test` | `cargo test --workspace` |
+| `test` | `cargo test --workspace` under `xvfb-run`, so the GUI's accessibility tests (`gui/src/a11y_tests.rs`) build real widgets; `VINOOPENEFFECTS_REQUIRE_DISPLAY=1` makes them fail rather than skip if GTK can't start |
 | `core` | Crate boundaries (`core` links no GStreamer, GTK or PipeWire; the GUI and CLI depend on `shared` only), then `core`'s tests with no system packages installed |
 | `coverage` | `cargo llvm-cov`: a summary in the job output and an upload to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), which comments on each PR; fails below 40% line coverage (a Coveralls outage never fails it) |
 | `build-npu` | `cargo check` of the daemon with and without default features |
@@ -95,6 +95,10 @@ change is meant to alter the output, update the digest and say so in the PR.
 | `install` | `shellcheck` on the install scripts, then `install.sh --no-models` into a scratch prefix, a check of every installed file, and `uninstall.sh`, which must leave nothing behind |
 | `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, sources) |
 | `fedora` | `cargo build` and `cargo test --locked` in a `fedora:latest` container with Fedora's own rustc. Not required, since a new Fedora release can break it on its own |
+
+Without a display (the `fedora` job, or a plain local
+`cargo test` over SSH) the GUI widget test prints `skipping: no display` and
+passes; the CSS contrast checks beside it always run.
 
 CI has no models, so the model-backed tests skip there. `models.yml` runs them
 for real: it fetches the models and the CPU onnxruntime, runs

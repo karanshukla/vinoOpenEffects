@@ -62,7 +62,11 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - *apt
       - *cache
-      - run: cargo test --workspace
+      - name: Install a headless X server for the GUI widget tests
+        run: sudo apt-get install -y --no-install-recommends xvfb xauth
+      - run: xvfb-run -a cargo test --workspace
+        env:
+          VINOOPENEFFECTS_REQUIRE_DISPLAY: "1"
 
   core:
     runs-on: ubuntu-26.04
@@ -98,7 +102,11 @@ jobs:
       - *apt
       - *cache
       - run: cargo install cargo-llvm-cov --locked
-      - run: cargo llvm-cov --workspace --no-report
+      - name: Install a headless X server for the GUI widget tests
+        run: sudo apt-get install -y --no-install-recommends xvfb xauth
+      - run: xvfb-run -a cargo llvm-cov --workspace --no-report
+        env:
+          VINOOPENEFFECTS_REQUIRE_DISPLAY: "1"
       - name: Coverage summary
         run: |
           {

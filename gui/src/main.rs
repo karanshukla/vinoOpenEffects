@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod a11y_tests;
 mod about;
 mod app;
 mod config;

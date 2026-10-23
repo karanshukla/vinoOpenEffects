@@ -65,6 +65,10 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         .hexpand(true)
         .vexpand(true)
         .build();
+    picture.update_property(&[
+        gtk::accessible::Property::Label("Camera preview"),
+        gtk::accessible::Property::Description("The virtual camera's output, with effects applied"),
+    ]);
 
     let status = gtk::Label::builder()
         .label("Connecting…")
@@ -116,6 +120,7 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         .margin_top(14)
         .css_classes(["oe-pill-dropdown"])
         .build();
+    camera_dropdown.update_property(&[gtk::accessible::Property::Label("Camera")]);
     let camera_handler = {
         let cmd_tx = cmd_tx.clone();
         camera_dropdown.connect_selected_notify(move |dd| {
@@ -149,9 +154,12 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         .orientation(gtk::Orientation::Horizontal)
         .spacing(8)
         .build();
-    compare_content.append(&gtk::Image::from_icon_name(
-        "object-flip-horizontal-symbolic",
-    ));
+    compare_content.append(
+        &gtk::Image::builder()
+            .icon_name("object-flip-horizontal-symbolic")
+            .accessible_role(gtk::AccessibleRole::Presentation)
+            .build(),
+    );
     compare_content.append(&gtk::Label::new(Some("Hold to compare")));
     let compare = gtk::Button::builder()
         .child(&compare_content)
@@ -312,6 +320,8 @@ impl Preview {
         self.retry_btn.set_sensitive(true);
         self.restart_btn.set_sensitive(true);
         self.problem.set_visible(true);
+        self.frame
+            .announce(text, gtk::AccessibleAnnouncementPriority::Medium);
     }
 
     pub(crate) fn drop_pipeline(&self) {
@@ -332,6 +342,10 @@ impl Preview {
         self.drop_pipeline();
         self.attempt.set(self.attempt.get().wrapping_add(1));
         self.problem_text.set_label("Restarting camera services…");
+        self.frame.announce(
+            "Restarting camera services",
+            gtk::AccessibleAnnouncementPriority::Low,
+        );
         self.retry_btn.set_sensitive(false);
         self.restart_btn.set_sensitive(false);
 
@@ -381,9 +395,14 @@ impl Preview {
         let status = self.status.downgrade();
         let live_pill = self.live_pill.downgrade();
         let problem = self.problem.downgrade();
+        let frame = self.frame.downgrade();
         let has_frames = self.has_frames.clone();
         paintable.connect_invalidate_contents(move |_| {
-            has_frames.set(true);
+            if !has_frames.replace(true)
+                && let Some(frame) = frame.upgrade()
+            {
+                frame.announce("Preview live", gtk::AccessibleAnnouncementPriority::Low);
+            }
             if let Some(problem) = problem.upgrade() {
                 problem.set_visible(false);
             }

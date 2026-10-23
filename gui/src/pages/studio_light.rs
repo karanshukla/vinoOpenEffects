@@ -106,6 +106,9 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         cmd_tx,
     );
 
+    auto_strength.set_accessible_name("Auto light strength");
+    bg_brightness.set_accessible_name("Background brightness");
+
     let rows = vec![
         on_you,
         intensity_row,
