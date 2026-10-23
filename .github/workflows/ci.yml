@@ -37,15 +37,25 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component clippy
       - &apt
         name: Install system dependencies
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt_opts="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
-          sudo apt-get $apt_opts update
-          sudo -E apt-get $apt_opts install -y --no-install-recommends \
-            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
-            libgtk-4-dev libadwaita-1-dev libpipewire-0.3-dev libspa-0.2-dev \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+          pkgs="libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev
+            libgtk-4-dev libadwaita-1-dev libpipewire-0.3-dev libspa-0.2-dev
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good"
+          # A slow runner mirror stalls apt rather than failing it, so time-box the
+          # network part and retry. Finished .debs stay in /var/cache/apt/archives, so
+          # each try resumes. The install itself runs offline, outside the timeout.
+          for try in 1 2 3; do
+            if sudo timeout 120 apt-get $apt_opts update &&
+               sudo timeout 180 apt-get $apt_opts install -y --no-install-recommends --download-only $pkgs; then
+              break
+            fi
+            [ "$try" = 3 ] && exit 1
+            echo "::warning::apt download attempt $try stalled or failed; retrying"
+          done
+          sudo apt-get install -y --no-install-recommends $pkgs
       - &cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
