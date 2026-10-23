@@ -96,7 +96,7 @@ change is meant to alter the output, update the digest and say so in the PR.
 | `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, sources) |
 | `fedora` | `cargo build` and `cargo test --locked` in a `fedora:latest` container with Fedora's own rustc. Not required, since a new Fedora release can break it on its own |
 
-Without a display (the `fedora` and `coverage` jobs, or a plain local
+Without a display (the `fedora` job, or a plain local
 `cargo test` over SSH) the GUI widget test prints `skipping: no display` and
 passes; the CSS contrast checks beside it always run.
 
