@@ -62,7 +62,11 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - *apt
       - *cache
-      - run: cargo test --workspace
+      - name: Install a headless X server for the GUI widget tests
+        run: sudo apt-get install -y --no-install-recommends xvfb xauth
+      - run: xvfb-run -a cargo test --workspace
+        env:
+          VINOOPENEFFECTS_REQUIRE_DISPLAY: "1"
 
   core:
     runs-on: ubuntu-26.04
