@@ -285,3 +285,15 @@ fn a_failed_model_still_turns_blur_off() {
     fx.process(&mut img, GOLDEN_W, GOLDEN_H);
     assert_eq!(img, golden_frame(0));
 }
+
+#[test]
+fn passthrough_drops_the_denoise_history() {
+    // Passthrough stops `process` (and the frame count), so the frame after it looks continuous.
+    let mut fx = Effects::default();
+    let mut img = vec![100, 100, 100, 255];
+    fx.denoise.apply(1, &mut img, 1, 1);
+    fx.pause();
+    let mut img = vec![110, 110, 110, 255];
+    fx.denoise.apply(2, &mut img, 1, 1);
+    assert_eq!(img, [110, 110, 110, 255]);
+}

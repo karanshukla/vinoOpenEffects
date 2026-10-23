@@ -549,16 +549,19 @@ fn set_custom_color(provider: &gtk::CssProvider, hex: &str) {
 }
 
 /// Install the static swatch CSS (base shape + one class per preset color).
+/// Every preset is dark, so on a dark card only the border separates it; see #76.
+pub(crate) const SWATCH_CSS: &str = ".oe-swatch { border-radius: 50%; border: 1px solid alpha(currentColor, 0.2); } \
+     .oe-swatch-btn { padding: 4px; min-width: 0; min-height: 0; } \
+     .oe-bg-thumb { border-radius: 10px; border: 1px solid alpha(currentColor, 0.2); \
+     overflow: hidden; } \
+     .oe-custom-image { background-color: alpha(currentColor, 0.08); } \
+     @media (prefers-color-scheme: dark) { \
+       .oe-swatch { border-color: alpha(currentColor, 0.6); } } \
+     @media (prefers-contrast: more) { \
+       .oe-swatch, .oe-bg-thumb { border-color: alpha(currentColor, 0.6); } }";
+
 fn install_swatch_css() {
-    let mut css = String::from(
-        ".oe-swatch { border-radius: 50%; border: 1px solid alpha(currentColor, 0.2); } \
-         .oe-swatch-btn { padding: 4px; min-width: 0; min-height: 0; } \
-         .oe-bg-thumb { border-radius: 10px; border: 1px solid alpha(currentColor, 0.2); \
-         overflow: hidden; } \
-         .oe-custom-image { background-color: alpha(currentColor, 0.08); } \
-         @media (prefers-contrast: more) { \
-           .oe-swatch, .oe-bg-thumb { border-color: alpha(currentColor, 0.6); } }",
-    );
+    let mut css = String::from(SWATCH_CSS);
     for (i, (_, hex)) in BG_PRESETS.iter().enumerate() {
         css.push_str(&format!(" .oe-swatch-{i} {{ background-color: {hex}; }}"));
     }

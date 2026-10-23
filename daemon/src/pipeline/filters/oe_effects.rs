@@ -225,6 +225,9 @@ mod imp {
             }
             let active = state.effects.settings.active();
             let triggered = pspec.name() == "trigger-reaction";
+            if !active && !triggered {
+                state.effects.pause();
+            }
             drop(state);
             self.obj().set_passthrough(!active && !triggered);
         }
@@ -340,6 +343,7 @@ mod imp {
 
             let mut state = self.state.lock().unwrap();
             if !state.effects.busy() {
+                state.effects.pause();
                 drop(state);
                 self.obj().set_passthrough(true);
                 return Ok(gst::FlowSuccess::Ok);
