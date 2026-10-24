@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn run_all_produces_a_check_per_probe() {
         let checks = run_all(Err("daemon is not running"));
-        assert_eq!(checks.len(), 15 + models::KNOWN_MODELS.len());
+        assert_eq!(checks.len(), 16 + models::KNOWN_MODELS.len());
         for c in &checks {
             assert!(!c.group.is_empty() && !c.name.is_empty(), "{c:?}");
         }
