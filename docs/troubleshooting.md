@@ -38,7 +38,7 @@ For more detail, set `RUST_LOG` in the daemon's environment (it defaults to
 | `daemon: systemd` | The user unit is missing or failed | `journalctl --user -u vinoopeneffects-daemon -e` |
 | `inference: build` | A `--no-default-features` (CPU-only) build | Rebuild with default features for the NPU |
 | `inference: onnxruntime` | No `libonnxruntime.so` found, or it has no OpenVINO provider. Without it no model runs, CPU included | `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort`, or set `ORT_DYLIB_PATH` |
-| `inference: npu` | No `/dev/accel/accel*`: no NPU, or the `intel_vpu` driver isn't loaded | Expected on machines without an NPU; `auto` uses CPU |
+| `inference: npu` | No `/dev/accel/accel*`: no NPU, or the `intel_vpu` driver isn't loaded. A warning means the node exists but you can't open it (Debian/Ubuntu give it to the `render` group) | Expected on machines without an NPU; `auto` uses CPU. For the warning: `sudo usermod -aG render $USER`, then log in again |
 | `inference: npu-failure` | A model failed to compile for the NPU on this driver and runtime, so `auto` uses CPU | `ovfetch detect`, then `vinoopeneffects-ctl inference --retry` |
 | `models: <id>` | A model is missing or its sha256 doesn't match the manifest | `scripts/fetch-models.sh` |
 | `camera: devices` | No camera found | Connect one; check `ls /dev/video*` |

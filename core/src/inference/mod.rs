@@ -82,6 +82,15 @@ pub fn probe_npu() -> NpuProbe {
             reason: Some("no Intel NPU hardware detected (/dev/accel has no accel nodes)".into()),
         };
     }
+    if shared::accel::probe().denied() {
+        return NpuProbe {
+            available: false,
+            reason: Some(format!(
+                "no permission to open the NPU in /dev/accel; {}",
+                shared::accel::PERMISSION_FIX
+            )),
+        };
+    }
     if let Err(e) = ensure_runtime() {
         return NpuProbe {
             available: false,
@@ -311,12 +320,7 @@ pub fn load_session_npu(_model: &Path, _provider: &str) -> anyhow::Result<Loaded
 #[cfg(feature = "npu")]
 /// Whether the kernel exposes an Intel NPU (`intel_vpu` registers `accel` nodes).
 pub(crate) fn npu_present() -> bool {
-    std::fs::read_dir("/dev/accel")
-        .map(|d| {
-            d.flatten()
-                .any(|e| e.file_name().to_string_lossy().starts_with("accel"))
-        })
-        .unwrap_or(false)
+    shared::accel::probe().total > 0
 }
 
 #[cfg(not(feature = "npu"))]

@@ -39,8 +39,7 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
         ort_lib.as_deref(),
         has_openvino,
     ));
-    let accel_count = inference::probe_npu_devices();
-    checks.push(inference::npu_hardware_verdict(accel_count));
+    checks.push(inference::npu_hardware_verdict(crate::accel::probe()));
     let record = inference::probe_npu_failure(ort_lib.as_deref());
     checks.push(inference::npu_failure_verdict(record.as_ref()));
 

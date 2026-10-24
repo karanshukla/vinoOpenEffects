@@ -82,13 +82,24 @@ pub fn probe_npu_failure(ort_lib: Option<&Path>) -> Option<crate::npu_failure::R
     failure::read(&failure::default_path()?, &failure::current(ort_lib))
 }
 
-pub fn npu_hardware_verdict(accel_count: usize) -> Check {
-    if accel_count > 0 {
+pub fn npu_hardware_verdict(nodes: crate::accel::Nodes) -> Check {
+    if nodes.denied() {
+        Check::new(
+            "inference",
+            "npu",
+            Status::Warn,
+            format!(
+                "{} Intel NPU device(s) in /dev/accel, but none can be opened by this user; models run on CPU",
+                nodes.total
+            ),
+            Some(crate::accel::PERMISSION_FIX.into()),
+        )
+    } else if nodes.total > 0 {
         Check::new(
             "inference",
             "npu",
             Status::Ok,
-            format!("{accel_count} Intel NPU device(s) found in /dev/accel"),
+            format!("{} Intel NPU device(s) found in /dev/accel", nodes.total),
             None,
         )
     } else {
@@ -138,17 +149,6 @@ pub fn probe_ort_runtime(home: Option<&Path>) -> (Option<PathBuf>, bool) {
         }
     }
     (None, false)
-}
-
-pub fn probe_npu_devices() -> usize {
-    std::fs::read_dir("/dev/accel")
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter(|e| e.file_name().to_string_lossy().starts_with("accel"))
-                .count()
-        })
-        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -202,10 +202,21 @@ mod tests {
 
     #[test]
     fn test_npu_hardware_verdict() {
-        let ok = npu_hardware_verdict(1);
+        use crate::accel::Nodes;
+        let ok = npu_hardware_verdict(Nodes {
+            total: 1,
+            usable: 1,
+        });
         assert_eq!(ok.status, Status::Ok);
 
-        let none = npu_hardware_verdict(0);
+        let none = npu_hardware_verdict(Nodes::default());
         assert_eq!(none.status, Status::Info);
+
+        let denied = npu_hardware_verdict(Nodes {
+            total: 1,
+            usable: 0,
+        });
+        assert_eq!(denied.status, Status::Warn);
+        assert!(denied.fix.unwrap().contains("render"));
     }
 }
