@@ -78,6 +78,8 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
     let distro = gui::probe_distro();
     let sink_found = gui::probe_gtk4_sink();
     checks.push(gui::gtk4_sink_verdict(sink_found, distro.as_ref()));
+    let pw_src_found = gui::probe_pipewire_src();
+    checks.push(gui::pipewire_src_verdict(pw_src_found, distro.as_ref()));
     let (gtk_ver, adw_ver) = gui::probe_gtk_versions();
     checks.push(gui::gtk_versions_verdict(
         gtk_ver.as_deref(),

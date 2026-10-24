@@ -93,7 +93,7 @@ Output checks:
 - **Models**: Mandatory and optional model file discovery and SHA256 integrity verification against `manifest.toml`.
 - **Camera**: V4L2 device enumeration with format class tags (`RGB`, `IR`, `meta`), selected camera validation (warning and suggesting RGB alternative if an IR sensor is chosen).
 - **Pipeline**: PipeWire session socket connectivity and virtual camera node presence.
-- **GUI**: `gtk4paintablesink` GStreamer element availability (with distro-specific package suggestions if missing) and GTK 4 / libadwaita versions.
+- **GUI**: `gtk4paintablesink` and `pipewiresrc` GStreamer element availability (with the package and install command for Fedora, Fedora Atomic, Debian/Ubuntu, Arch, openSUSE and openSUSE Aeon/MicroOS if missing) and GTK 4 / libadwaita versions.
 - **Config**: `state.toml` existence, syntax validity, and unrecognized keys detection.
 
 Machine-readable JSON output for bug reports or scripts:
