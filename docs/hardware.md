@@ -12,8 +12,8 @@ snapshot, not a promise.
 | **GPU** (OpenVINO EP) | `VINOOPENEFFECTS_EP=gpu` only; `auto` never picks it, and the saved setting takes `auto`, `cpu` or `npu` | Same models as the NPU path. Not measured yet |
 | **CPU** | `auto` without a usable NPU, or `cpu` explicitly | Every model except Auto light, which stays off |
 
-`auto` and `npu` fall back to CPU when the runtime has no OpenVINO provider or a
-model fails to compile for the NPU, and never stop the video over it. When an
+`auto` and `npu` fall back to CPU when the runtime has no OpenVINO provider, the
+user can't open `/dev/accel` (below), or a model fails to compile for the NPU, and never stop the video over it. When an
 NPU exists but isn't used the install is *degraded*: the reason and its fix show
 in the daemon log, `vinoopeneffects-ctl status` and `inference`, `doctor`, and a
 banner in the GUI. A machine without an NPU just runs on CPU and isn't degraded.
@@ -25,6 +25,13 @@ honoured is an error. Set the provider with
 `vinoopeneffects-ctl inference auto|cpu|npu` (saved to `state.toml`, swappable
 while streaming) or `VINOOPENEFFECTS_EP` in the daemon's environment, which wins.
 [architecture.md](architecture.md#inference) has the mechanics.
+
+**NPU device permissions differ by distro.** Fedora's udev rules make
+`/dev/accel/accel*` world read-write. Debian, Ubuntu and their derivatives make
+them `root:render 0660` with no seat ACL, so a user outside the `render` group
+can see the NPU but not open it. The daemon then treats it as degraded and says
+so; fix it with `sudo usermod -aG render $USER` and a fresh login. Other distros
+follow whichever of the two their systemd build picked (`ls -l /dev/accel`).
 
 onnxruntime always comes from [ovfetch](https://github.com/karanshukla/ovfetch),
 which `scripts/install.sh` runs: the OpenVINO build matched to the NPU and its
