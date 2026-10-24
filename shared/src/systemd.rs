@@ -31,6 +31,23 @@ pub fn is_enabled() -> bool {
         .unwrap_or(false)
 }
 
+/// The target the unit's `WantedBy=` hangs off. GNOME and Plasma start it; sway and
+/// Hyprland only do with systemd integration (sway-systemd, uwsm), so autostart never fires there.
+pub const SESSION_TARGET: &str = "graphical-session.target";
+
+/// What to do when [`SESSION_TARGET`] isn't active, for the CLI, the GUI and `doctor`.
+pub const NO_SESSION_TARGET_FIX: &str = "start the daemon from your compositor instead: \
+    `exec systemctl --user start vinoopeneffects-daemon` (sway), \
+    `exec-once = systemctl --user start vinoopeneffects-daemon` (Hyprland), \
+    or run the compositor under sway-systemd or uwsm";
+
+/// Whether this session started `graphical-session.target`. `None` if systemctl couldn't be run.
+pub fn session_target_active() -> Option<bool> {
+    systemctl(&["is-active", "--quiet", SESSION_TARGET])
+        .ok()
+        .map(|out| out.status.success())
+}
+
 /// Whether the unit is currently active/running.
 pub fn is_active() -> bool {
     systemctl(&["is-active", UNIT])

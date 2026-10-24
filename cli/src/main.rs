@@ -546,6 +546,13 @@ fn autostart(command: &AutostartCommand) -> anyhow::Result<()> {
                 "autostart enabled: {} will start with the graphical session",
                 shared::systemd::UNIT
             );
+            if shared::systemd::session_target_active() == Some(false) {
+                eprintln!(
+                    "note: {} isn't active in this session, so this won't fire here; {}",
+                    shared::systemd::SESSION_TARGET,
+                    shared::systemd::NO_SESSION_TARGET_FIX
+                );
+            }
         }
         AutostartCommand::Disable => {
             shared::systemd::set_enabled(false).map_err(|e| anyhow::anyhow!(e))?;
@@ -568,6 +575,13 @@ fn autostart(command: &AutostartCommand) -> anyhow::Result<()> {
                     "stopped"
                 }
             );
+            if shared::systemd::session_target_active() == Some(false) {
+                println!(
+                    "session:   {} inactive, so autostart won't fire; {}",
+                    shared::systemd::SESSION_TARGET,
+                    shared::systemd::NO_SESSION_TARGET_FIX
+                );
+            }
         }
     }
     Ok(())

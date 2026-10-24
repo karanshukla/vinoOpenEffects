@@ -179,6 +179,13 @@ pub(crate) fn build_page(
         .active(shared::systemd::is_enabled())
         .build();
     keep_running_row.set_sensitive(!boot_row.is_active());
+    // sway/Hyprland without systemd integration never start the target the unit hangs off.
+    if shared::systemd::session_target_active() == Some(false) {
+        boot_row.set_subtitle(
+            "Your session doesn't start graphical-session.target, so this won't take effect. \
+             Start the daemon from your compositor's config instead",
+        );
+    }
 
     let keep_running_for_boot = keep_running_row.clone();
     boot_row.connect_active_notify(move |row| {
