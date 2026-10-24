@@ -73,6 +73,12 @@ Control whether the daemon starts automatically with your desktop session
 | `vinoopeneffects-ctl autostart disable` | Stop starting it automatically.                                   |
 | `vinoopeneffects-ctl autostart status`  | Show whether autostart is enabled and whether the daemon is running. |
 
+The unit is `WantedBy=graphical-session.target`. GNOME and KDE Plasma start
+that target; sway and Hyprland only do when run under systemd integration
+(sway-systemd, uwsm), so elsewhere `enable` succeeds but never fires.
+`enable`, `status` and `doctor` (`daemon: session`) say so when the target isn't
+active; see [install.md](install.md#desktops) for what to do instead.
+
 ## Diagnostics (`doctor`)
 
 Inspect system environment, models, NPU hardware, camera classifications, and daemon health in one command:

@@ -210,6 +210,45 @@ pub fn probe_activation_files(home: Option<&Path>) -> Vec<ActivationFileInfo> {
         .collect()
 }
 
+/// Autostart is `WantedBy=graphical-session.target`, which wlroots compositors often never start.
+pub fn session_target_verdict(target_active: Option<bool>, unit_enabled: bool) -> Check {
+    let target = crate::systemd::SESSION_TARGET;
+    match target_active {
+        Some(true) => Check::new(
+            "daemon",
+            "session",
+            Status::Ok,
+            format!("{target} is active, so autostart can start the daemon"),
+            None,
+        ),
+        Some(false) if unit_enabled => Check::new(
+            "daemon",
+            "session",
+            Status::Warn,
+            format!(
+                "autostart is enabled but {target} isn't active in this session, so it never fires"
+            ),
+            Some(crate::systemd::NO_SESSION_TARGET_FIX.into()),
+        ),
+        Some(false) => Check::new(
+            "daemon",
+            "session",
+            Status::Info,
+            format!(
+                "{target} isn't active in this session; enabling autostart wouldn't start the daemon"
+            ),
+            Some(crate::systemd::NO_SESSION_TARGET_FIX.into()),
+        ),
+        None => Check::new(
+            "daemon",
+            "session",
+            Status::Info,
+            "could not ask systemd about the graphical session",
+            None,
+        ),
+    }
+}
+
 pub fn probe_systemd_unit() -> (UnitState, bool) {
     use std::process::Command;
 
@@ -243,6 +282,19 @@ pub fn probe_systemd_unit() -> (UnitState, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_target_warns_only_when_autostart_is_enabled() {
+        assert_eq!(session_target_verdict(Some(true), true).status, Status::Ok);
+        let enabled = session_target_verdict(Some(false), true);
+        assert_eq!(enabled.status, Status::Warn);
+        assert!(enabled.fix.unwrap().contains("exec-once"));
+        assert_eq!(
+            session_target_verdict(Some(false), false).status,
+            Status::Info
+        );
+        assert_eq!(session_target_verdict(None, true).status, Status::Info);
+    }
 
     #[test]
     fn test_dbus_verdict_ok_and_fail() {

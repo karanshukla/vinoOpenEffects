@@ -26,6 +26,10 @@ pub fn run_all(dbus_status: Result<&str, &str>) -> Vec<Check> {
     ));
     checks.push(daemon::activation_file_verdict(&act_files));
     checks.push(daemon::systemd_unit_verdict(unit_state, unit_enabled));
+    checks.push(daemon::session_target_verdict(
+        crate::systemd::session_target_active(),
+        unit_enabled,
+    ));
 
     checks.push(inference::build_feature_verdict(
         inference::probe_built_with_npu(),
@@ -144,7 +148,7 @@ mod tests {
     #[test]
     fn run_all_produces_a_check_per_probe() {
         let checks = run_all(Err("daemon is not running"));
-        assert_eq!(checks.len(), 14 + models::KNOWN_MODELS.len());
+        assert_eq!(checks.len(), 15 + models::KNOWN_MODELS.len());
         for c in &checks {
             assert!(!c.group.is_empty() && !c.name.is_empty(), "{c:?}");
         }

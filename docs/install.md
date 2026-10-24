@@ -74,6 +74,41 @@ The daemon starts on demand, the first time a client talks to it. To start it
 with the desktop session instead, see `vinoopeneffects-ctl autostart` in
 [cli.md](cli.md#autostart).
 
+## Desktops
+
+Wayland only. Nothing in the daemon or the GUI is tied to one desktop: the
+virtual camera is a PipeWire node and the GUI is plain GTK 4/libadwaita. What
+differs is how the daemon gets started and how sandboxed apps reach the camera.
+
+| Desktop | `autostart enable` | Notes |
+|---|---|---|
+| KDE Plasma | Works | The primary target |
+| GNOME | Works | |
+| sway, Hyprland | Only under systemd integration (sway-systemd, uwsm) | Otherwise start it from the compositor config, below |
+| COSMIC, others | Run `vinoopeneffects-ctl autostart status` | It says whether `graphical-session.target` is active |
+
+Autostart hangs off `graphical-session.target`. A compositor that doesn't start
+it never starts the daemon at login, so add it to the compositor's config
+instead:
+
+```
+# sway (~/.config/sway/config)
+exec systemctl --user start vinoopeneffects-daemon
+
+# Hyprland (~/.config/hypr/hyprland.conf)
+exec-once = systemctl --user start vinoopeneffects-daemon
+```
+
+Without either, the daemon still starts on demand the first time the GUI or the
+CLI talks to it; autostart only matters for apps that should see the virtual
+camera before that.
+
+Flatpak apps, and browsers using PipeWire cameras, reach the virtual camera
+through xdg-desktop-portal's Camera portal, which asks the desktop's portal
+backend for permission. The GNOME and KDE backends do that.
+`xdg-desktop-portal-wlr` and `-hyprland` don't, so on sway or Hyprland also
+install `xdg-desktop-portal-gtk`.
+
 ## Files at runtime
 
 - `~/.config/vinoopeneffects/state.toml`: effect settings, the selected camera
