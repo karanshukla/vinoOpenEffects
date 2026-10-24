@@ -16,7 +16,56 @@ is easier from a checkout, and packaging will come back later.
 - [ovfetch](https://github.com/karanshukla/ovfetch) 0.5.0 or newer
   (`cargo install ovfetch --locked`), on every machine: it is the only source of
   onnxruntime
+- Python 3.11 or newer and `curl`, for fetching the models (or `--no-models`)
 - x86_64 has been tested; nothing else has
+
+## Distros
+
+Developed on Fedora 45 KDE. Others are expected to work from the package
+lists in [development.md](development.md#environments); "not tried" means
+nobody has reported back yet, not that something is known to break.
+
+| Distro | Status | Notes |
+|---|---|---|
+| Fedora 42+ (Workstation, KDE) | Primary target | |
+| Fedora Atomic (Silverblue, Kinoite, Bazzite) | Not tried | Build in a toolbox, see below |
+| Ubuntu 26.04, Debian 13 | CI builds and tests on Ubuntu 26.04 | NPU users need the `render` group ([hardware.md](hardware.md)) |
+| Ubuntu 24.04, Debian 12 | Daemon and CLI only | libadwaita 1.5/1.2 is too old for the GUI: `--no-gui`. Their packaged Rust is older than 1.92, so use rustup |
+| Arch | Not tried | `gst-plugin-pipewire` isn't pulled in by `pipewire` |
+| openSUSE Tumbleweed | Not tried | The GUI preview's sink is in `gstreamer-plugins-rs` |
+| openSUSE Leap 15 | Unsupported | GTK, libadwaita and Python are too old |
+| openSUSE Aeon / MicroOS | Not tried | Build in a distrobox, as for Fedora Atomic |
+
+`vinoopeneffects-ctl doctor` names the missing package for your distro.
+
+### Fedora Atomic and other image-based distros
+
+`/usr` is read-only, so the default `~/.local` install is the one to use
+(`/usr/local` also works: on Fedora Atomic it is `/var/usrlocal`). Nothing here
+needs root or a kernel module. The build needs the `-devel` packages and Rust,
+which belong in a toolbox (or distrobox) rather than layered on the host:
+
+```bash
+toolbox create --release "$(rpm -E %fedora)" vinoopeneffects
+toolbox enter vinoopeneffects
+sudo dnf install rust cargo  # plus the Fedora list in development.md
+cargo install ovfetch --locked
+scripts/install.sh
+```
+
+The toolbox shares your home directory and session bus, so the install lands in
+`~/.local` and the daemon runs on the host. Create the toolbox with the host's
+release so the binaries link against the same library versions the host has.
+The host then needs the runtime side: GStreamer with `-plugins-good`,
+`pipewire-gstreamer`, and for the GUI `gtk4`, `libadwaita` and
+`gstreamer1-plugin-gtk4`. Silverblue ships most of these; Kinoite and Bazzite
+may not ship the GTK ones. Run `vinoopeneffects-ctl doctor` on the host: it
+names what to `rpm-ostree install`. If `vinoopeneffects-ctl status` on the host
+says the daemon isn't activatable, run `systemctl --user daemon-reload` there or
+log in again.
+
+On openSUSE Aeon and MicroOS the same applies with a Tumbleweed distrobox and
+`transactional-update pkg install` for anything the host lacks.
 
 ## Installing
 

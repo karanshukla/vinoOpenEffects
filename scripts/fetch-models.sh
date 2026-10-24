@@ -7,6 +7,11 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 models_src="$repo_root/data/models"
+python3 -c 'import tomllib' 2>/dev/null || {
+    echo "fetch-models: needs Python 3.11 or newer (for tomllib)" >&2
+    exit 1
+}
+
 dest_root="${VINOOPENEFFECTS_MODELS_DEST:-${XDG_DATA_HOME:-$HOME/.local/share}/vinoopeneffects/models}"
 
 for manifest in "$models_src"/*/manifest.toml; do
