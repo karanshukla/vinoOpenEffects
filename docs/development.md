@@ -16,10 +16,36 @@ sudo dnf install gcc pkgconf-pkg-config clang-devel \
   gstreamer1-plugins-base gstreamer1-plugins-good
 
 # Debian / Ubuntu (what CI uses)
-sudo apt install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+sudo apt install build-essential pkg-config libclang-dev \
+  libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
   libgtk-4-dev libadwaita-1-dev \
   libpipewire-0.3-dev libspa-0.2-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+
+# Arch
+sudo pacman -S --needed base-devel clang gstreamer gst-plugins-base gst-plugins-good \
+  gtk4 libadwaita pipewire
+
+# openSUSE Tumbleweed
+sudo zypper install gcc pkgconf clang-devel gstreamer-devel gstreamer-plugins-base-devel \
+  gtk4-devel libadwaita-devel pipewire-devel gstreamer-plugins-good
 ```
+
+`clang` is for bindgen in `pipewire-sys`/`libspa-sys`; GitHub's Ubuntu runners
+ship it, a fresh Debian or Ubuntu doesn't. The GUI needs libadwaita 1.7, so
+Ubuntu 24.04 and Debian 12 build the daemon and CLI only
+(`cargo build -p vinoopeneffects-daemon -p vinoopeneffects-ctl`). On Fedora
+Atomic or openSUSE Aeon, install these in a toolbox or distrobox
+([install.md](install.md#fedora-atomic-and-other-image-based-distros)).
+
+To run the GUI's live preview you also need the GStreamer PipeWire source and
+GTK 4 sink:
+
+| | PipeWire source | GTK 4 sink |
+|---|---|---|
+| Fedora | `pipewire-gstreamer` | `gstreamer1-plugin-gtk4` |
+| Debian / Ubuntu | `gstreamer1.0-pipewire` | `gstreamer1.0-gtk4` |
+| Arch | `gst-plugin-pipewire` | `gst-plugin-gtk4` |
+| openSUSE | `gstreamer-plugin-pipewire` | `gstreamer-plugins-rs` |
 
 That is enough to build and to run `cargo test --workspace`. Two more things
 are needed to run the models, and the tests that use them skip without them:

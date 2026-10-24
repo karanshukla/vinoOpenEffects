@@ -46,6 +46,22 @@ if [ "$as_root" = 1 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; th
     user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
 fi
 
+# Check before the build: Fedora Atomic and openSUSE Aeon/MicroOS keep /usr read-only.
+parent="$prefix"
+while [ ! -e "$parent" ]; do parent="$(dirname "$parent")"; done
+if [ ! -w "$parent" ]; then
+    if [ "$as_root" = 1 ]; then
+        die "$parent is read-only (image-based distros keep /usr read-only); use the default ~/.local, or --prefix /usr/local"
+    fi
+    die "$parent is not writable by $(id -un); install to the default ~/.local, or build first and use sudo (see --help)"
+fi
+
+if [ "$models" = 1 ]; then
+    python3 -c 'import tomllib' 2>/dev/null ||
+        die "fetching models needs Python 3.11 or newer (for tomllib); install it, or pass --no-models"
+    command -v curl >/dev/null 2>&1 || die "fetching models needs curl; install it, or pass --no-models"
+fi
+
 ovfetch="$(command -v ovfetch || true)"
 # sudo's secure_path drops ~/.cargo/bin, where `cargo install` put it.
 if [ -z "$ovfetch" ] && [ -n "$user_home" ] && [ -x "$user_home/.cargo/bin/ovfetch" ]; then
@@ -176,6 +192,13 @@ esac
 if [ "$as_root" = 1 ] && [ -z "$user_home" ]; then
     echo "note: run as root without sudo, so no user session was reloaded; log in again or run" >&2
     echo "  systemctl --user daemon-reload as the user who will run the daemon" >&2
+fi
+
+# toolbox and distrobox share $HOME, so the install is usable, but the daemon runs on the host.
+if [ -e /run/.containerenv ] || [ -e /run/.toolboxenv ] || [ -e /.dockerenv ]; then
+    echo "note: installed from inside a container; the daemon and GUI run on the host, which needs" >&2
+    echo "  their runtime libraries (docs/install.md#fedora-atomic-and-other-image-based-distros)." >&2
+    echo "  If clients can't find the daemon, run systemctl --user daemon-reload on the host." >&2
 fi
 
 echo "==> Done. Try: vinoopeneffects-ctl status"
