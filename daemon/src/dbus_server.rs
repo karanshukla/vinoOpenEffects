@@ -752,7 +752,7 @@ mod tests {
             args.iter()
                 .map(|a| {
                     let out = signal || a.direction() == Some(zbus_xml::ArgDirection::Out);
-                    format!("{}:{}", if out { "out" } else { "in" }, a.ty())
+                    format!("{}:{}", if out { "out" } else { "in" }, &**a.ty())
                 })
                 .collect::<Vec<_>>()
                 .join(",")
@@ -765,7 +765,12 @@ mod tests {
             out.insert(format!("signal {}({})", s.name(), args(s.args(), true)));
         }
         for p in iface.properties() {
-            out.insert(format!("property {} {} {:?}", p.name(), p.ty(), p.access()));
+            out.insert(format!(
+                "property {} {} {:?}",
+                p.name(),
+                &**p.ty(),
+                p.access()
+            ));
         }
         out
     }
