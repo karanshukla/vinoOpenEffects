@@ -216,6 +216,30 @@ impl AppState {
         Ok(state)
     }
 
+    /// Like [`Self::load_or_default`], but a file that doesn't parse is moved
+    /// aside and defaults are returned with the path it was moved to.
+    pub fn load_or_recover() -> Result<(Self, Option<PathBuf>), ConfigError> {
+        Self::load_or_recover_from(Self::config_path()?)
+    }
+
+    pub fn load_or_recover_from(path: PathBuf) -> Result<(Self, Option<PathBuf>), ConfigError> {
+        match Self::load_or_default_from(path.clone()) {
+            Ok(state) => Ok((state, None)),
+            Err(ConfigError::Parse(_)) => {
+                // The daemon saves on its first change, which would replace the user's file with defaults.
+                let secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                let mut bad = path.clone().into_os_string();
+                bad.push(format!(".bad-{secs}"));
+                let bad = PathBuf::from(bad);
+                std::fs::rename(&path, &bad)?;
+                Ok((Self::default(), Some(bad)))
+            }
+            Err(err) => Err(err),
+        }
+    }
+
     pub fn save(&self) -> Result<(), ConfigError> {
         let path = Self::config_path()?;
         self.save_to(path)
@@ -226,9 +250,28 @@ impl AppState {
             std::fs::create_dir_all(parent)?;
         }
         let text = toml::to_string_pretty(self)?;
-        std::fs::write(&path, text)?;
+        write_atomic(&path, text.as_bytes())?;
         Ok(())
     }
+}
+
+/// Write via a synced temp file and rename, so a crash or full disk leaves
+/// either the old file or the new one, never a truncated one.
+fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    let res = std::fs::File::create(&tmp)
+        .and_then(|mut f| {
+            f.write_all(bytes)?;
+            f.sync_all()
+        })
+        .and_then(|()| std::fs::rename(&tmp, path));
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
 }
 
 #[cfg(test)]
@@ -303,6 +346,100 @@ selected = ""
         let loaded: AppState =
             toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
         assert!(!loaded.effects.reactions.enabled);
+    }
+
+    #[test]
+    fn save_replaces_existing_file_and_leaves_no_temp() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        std::fs::write(
+            &path,
+            "garbage that is longer than the new file ".repeat(100),
+        )
+        .unwrap();
+
+        let mut state = AppState::default();
+        state.effects.portrait_blur.strength = 77;
+        state.save_to(path.clone()).unwrap();
+
+        let loaded = AppState::load_or_default_from(path.clone()).unwrap();
+        assert_eq!(loaded.effects.portrait_blur.strength, 77);
+        assert!(!tmp.path().join("state.toml.tmp").exists());
+    }
+
+    #[test]
+    fn failed_save_keeps_the_old_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        let mut old = AppState::default();
+        old.effects.portrait_blur.strength = 90;
+        old.save_to(path.clone()).unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        // A directory where the temp file goes makes the write fail before the rename.
+        std::fs::create_dir(tmp.path().join("state.toml.tmp")).unwrap();
+        assert!(AppState::default().save_to(path.clone()).is_err());
+
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn truncated_config_is_a_parse_error() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        std::fs::write(&path, "[effects.portrait_blur]\nenabled = tr").unwrap();
+        assert!(matches!(
+            AppState::load_or_default_from(path),
+            Err(ConfigError::Parse(_))
+        ));
+    }
+
+    #[test]
+    fn unparseable_config_is_moved_aside_not_lost() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        let bytes = b"[effects.portrait_blur]\nstrength = \"lots\"\n";
+        std::fs::write(&path, bytes).unwrap();
+
+        let (state, bad) = AppState::load_or_recover_from(path.clone()).unwrap();
+        assert_eq!(state.effects.portrait_blur.strength, 50);
+        let bad = bad.expect("bad file path");
+        assert!(
+            bad.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("state.toml.bad-")
+        );
+        assert_eq!(std::fs::read(&bad).unwrap(), bytes);
+        assert!(!path.exists());
+
+        // The daemon's next save must not touch the moved-aside copy.
+        state.save_to(path.clone()).unwrap();
+        assert_eq!(std::fs::read(&bad).unwrap(), bytes);
+    }
+
+    #[test]
+    fn recover_passes_good_and_missing_files_through() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        let (state, bad) = AppState::load_or_recover_from(path.clone()).unwrap();
+        assert!(bad.is_none());
+        assert!(!state.bypass);
+
+        std::fs::write(&path, SAMPLE_TOML).unwrap();
+        let (state, bad) = AppState::load_or_recover_from(path.clone()).unwrap();
+        assert!(bad.is_none());
+        assert_eq!(state.effects.portrait_blur.strength, 75);
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn unknown_keys_from_a_newer_version_still_load() {
+        let text =
+            format!("{SAMPLE_TOML}\nfuture_key = 1\n[effects.future_effect]\nenabled = true\n");
+        let state: AppState = toml::from_str(&text).expect("unknown keys must not fail the load");
+        assert_eq!(state.effects.portrait_blur.strength, 75);
     }
 
     #[test]

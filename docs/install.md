@@ -161,7 +161,8 @@ install `xdg-desktop-portal-gtk`.
 ## Files at runtime
 
 - `~/.config/vinoopeneffects/state.toml`: effect settings, the selected camera
-  and the inference provider, written by the daemon
+  and the inference provider, written by the daemon. One it can't parse is
+  moved aside to `state.toml.bad-<time>`, not overwritten
 - `~/.config/vinoopeneffects/gui.toml`: GUI-only preferences
 - `~/.local/share/vinoopeneffects/backgrounds/`: the preset background images,
   extracted from the GUI binary on first launch

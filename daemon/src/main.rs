@@ -50,10 +50,17 @@ async fn run() -> anyhow::Result<()> {
     shared::migrate::migrate_legacy_paths().log();
 
     let start_pipeline = std::env::args().any(|arg| arg == "--start");
-    let mut app = AppState::load_or_default().unwrap_or_else(|err| {
-        error!(%err, "failed to load config, using defaults");
-        AppState::default()
-    });
+    let mut app = match AppState::load_or_recover() {
+        Ok((app, None)) => app,
+        Ok((app, Some(bad))) => {
+            error!(moved_to = %bad.display(), "config did not parse, using defaults");
+            app
+        }
+        Err(err) => {
+            error!(%err, "failed to load config, using defaults");
+            AppState::default()
+        }
+    };
     if app.camera.selected.trim().is_empty() {
         match gstreamer::init() {
             Err(err) => {
