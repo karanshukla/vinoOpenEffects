@@ -146,7 +146,7 @@ installing.
 
 ```bash
 scripts/release.sh --dry-run                               # next tag, and the PRs merged since the last one
-git cliff --unreleased --tag v1 --prepend CHANGELOG.md     # then merge this through a PR
+git cliff --unreleased --tag vN --prepend CHANGELOG.md     # vN from the dry run; then merge this through a PR
 scripts/release.sh                                         # from an up-to-date main: tag origin/main's head, push the tag
 ```
 
