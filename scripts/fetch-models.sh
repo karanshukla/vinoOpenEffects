@@ -27,6 +27,8 @@ with open(sys.argv[1], "rb") as f:
     model = tomllib.load(f)["model"]
 
 variant = model["variants"][0]
+if "/" in variant["file"] or variant["file"] in ("", ".", ".."):
+    sys.exit(f"{sys.argv[1]}: variant file must be a bare file name, got {variant['file']!r}")
 url = model.get("source", {}).get("url", "")
 print(url, variant["file"], variant["sha256"])
 EOF
