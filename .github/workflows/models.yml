@@ -9,6 +9,7 @@ on:
       - "scripts/fetch-models.sh"
       - "scripts/install.sh"
       - "core/src/inference/**"
+      - "daemon/src/pipeline/**"
       - ".github/workflows/models.yml"
   push:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - "scripts/fetch-models.sh"
       - "scripts/install.sh"
       - "core/src/inference/**"
+      - "daemon/src/pipeline/**"
       - ".github/workflows/models.yml"
   schedule:
     - cron: "0 7 * * 1"
