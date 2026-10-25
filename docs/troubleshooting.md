@@ -48,7 +48,7 @@ For more detail, set `RUST_LOG` in the daemon's environment (it defaults to
 | `gui: sink` | `gtk4paintablesink` is missing, so the GUI preview can't show video | Install the package `doctor` names for your distro |
 | `gui: pipewiresrc` | PipeWire's GStreamer plugin is missing, so the GUI preview can't read the virtual camera. Arch and openSUSE package it apart from PipeWire | Install the package `doctor` names for your distro |
 | `gui: libraries` | GTK 4 or libadwaita too old (the GUI needs libadwaita 1.7) | Upgrade, or use the CLI |
-| `config: state.toml` | A syntax error or unknown keys | Fix the file, or delete it to start from defaults |
+| `config: state.toml` | A syntax error or unknown keys. A daemon that finds a file it can't parse moves it to `state.toml.bad-<time>` and starts from defaults | Fix the file, or delete it to start from defaults. To get old settings back, fix the `.bad-` copy, stop the daemon and rename it to `state.toml` |
 
 `models: iat_lowlight` is optional and not fetched by `fetch-models.sh`; see
 [hardware.md](hardware.md).
