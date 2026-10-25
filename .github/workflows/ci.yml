@@ -87,6 +87,9 @@ jobs:
   coverage:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
+    env:
+      # bench.rs is the --bench-video harness, not product code.
+      COV_IGNORE: --ignore-filename-regex daemon/src/bench\.rs
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -94,7 +97,9 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component llvm-tools-preview
       - *apt
       - *cache
-      - run: cargo install cargo-llvm-cov --locked
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-llvm-cov
       - name: Install a headless X server for the GUI widget tests
         run: sudo apt-get install -y --no-install-recommends xvfb xauth
       - run: xvfb-run -a cargo llvm-cov --workspace --no-report
@@ -105,10 +110,15 @@ jobs:
           {
             echo '## Coverage'
             echo '```'
-            cargo llvm-cov report --summary-only
+            cargo llvm-cov report --summary-only $COV_IGNORE
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - run: cargo llvm-cov report --lcov --output-path lcov.info
+      - run: cargo llvm-cov report --lcov --output-path lcov.info $COV_IGNORE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lcov
+          path: lcov.info
+          if-no-files-found: error
       - name: Upload to Coveralls
         uses: coverallsapp/github-action@8d6379e14d29928660c4ba802d8e85393440b329 # v2.3.8
         with:
@@ -116,7 +126,7 @@ jobs:
           file: lcov.info
           fail-on-error: false
       - name: Enforce minimum line coverage
-        run: cargo llvm-cov report --summary-only --fail-under-lines 40
+        run: cargo llvm-cov report --summary-only --fail-under-lines 57 $COV_IGNORE
 
   build-npu:
     runs-on: ubuntu-26.04
@@ -142,7 +152,8 @@ jobs:
       - run: rustup toolchain install 1.92 --profile minimal
       - *apt
       - *cache
-      - run: cargo +1.92 check --workspace
+      # Builds the tests too, so a newer API used only in tests or a dev-dependency fails here.
+      - run: cargo +1.92 test --workspace --no-run
 
   install:
     runs-on: ubuntu-26.04
@@ -154,7 +165,15 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - *apt
       - *cache
-      - run: shellcheck scripts/install.sh scripts/uninstall.sh
+      - run: shellcheck scripts/*.sh
+      - name: Refuse a prefix the user can't write, before building
+        run: |
+          if out="$(scripts/install.sh --prefix /usr/vinoopeneffects-ci --no-models 2>&1)"; then
+            echo "install.sh accepted an unwritable prefix"; exit 1
+          fi
+          echo "$out"
+          grep -q "is not writable" <<<"$out"
+          ! grep -q "Building" <<<"$out"
       - name: Install ovfetch
         run: cargo install ovfetch --version "$(sed -n 's/^ovfetch_min=//p' scripts/install.sh)" --locked
       - name: Install into a scratch prefix, then remove it
@@ -171,9 +190,37 @@ jobs:
             test -e "$prefix/$f" || { echo "missing: $f"; exit 1; }
           done
           grep -qx "Exec=$prefix/bin/vinoopeneffects-daemon" "$prefix/share/dbus-1/services/$id.Daemon.service"
+          # An upgrade over the same prefix keeps or reinstalls onnxruntime and must succeed.
+          scripts/install.sh --prefix "$prefix" --no-models
+          test -x "$prefix/bin/vinoopeneffects-daemon"
           scripts/uninstall.sh --prefix "$prefix"
           leftover="$(find "$prefix" -type f)"
           test -z "$leftover" || { echo "left behind:"; echo "$leftover"; exit 1; }
+
+  release-bundle:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - *cache
+      # Same archive command as release.yml, with a made-up tag; the bundle has no .git.
+      - name: Build the CLI from a source bundle and check it reports the tag
+        env:
+          TAG: v9999
+        run: |
+          git archive --format=tar.gz --prefix="vinoopeneffects-$TAG/" \
+            --add-virtual-file="vinoopeneffects-$TAG/VERSION:$TAG" \
+            -o "$RUNNER_TEMP/bundle.tar.gz" HEAD
+          tar -xzf "$RUNNER_TEMP/bundle.tar.gz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/vinoopeneffects-$TAG"
+          test ! -e .git
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" cargo build --locked -p vinoopeneffects-ctl
+          out="$("$GITHUB_WORKSPACE/target/debug/vinoopeneffects-ctl" --version)"
+          echo "$out"
+          grep -qw "$TAG" <<<"$out"
 
   deny:
     runs-on: ubuntu-26.04

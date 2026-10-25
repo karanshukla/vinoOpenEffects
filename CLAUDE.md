@@ -38,7 +38,7 @@ cargo test -p vinoopeneffects-core gesture    # one module
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
-cargo +1.92 check --workspace                 # MSRV
+cargo +1.92 test --workspace --no-run        # MSRV
 ```
 
 Crate names: `vinoopeneffects-shared`, `vinoopeneffects-core`,
@@ -53,14 +53,14 @@ in an app (or the GUI preview). `vinoopeneffects-ctl doctor` checks the install.
 ## CI
 
 `ci.yml` runs `fmt`, `clippy`, `test`, `core`, `coverage`, `build-npu`, `msrv`,
-`install`, `deny` and `fedora` on every PR; `docs/development.md#ci` says what
+`install`, `release-bundle`, `deny` and `fedora` on every PR; `docs/development.md#ci` says what
 each one checks. The ones that bite:
 
 - `core` fails if `vinoopeneffects-core` gains a normal dependency on GStreamer,
   GTK, libadwaita or PipeWire, or if the GUI or CLI depends on `core` or the
   daemon. Clients talk to the daemon over D-Bus only, through `shared`.
-- `coverage` fails below 40% line coverage.
-- `msrv` builds with Rust 1.92; keep it in step with `rust-version` in
+- `coverage` fails below 57% line coverage.
+- `msrv` builds the tests with Rust 1.92; keep it in step with `rust-version` in
   `Cargo.toml`.
 - `install` runs `install.sh`/`uninstall.sh` into a scratch prefix and fails on
   any missing or leftover file, so new installed files go in both scripts.
@@ -92,6 +92,8 @@ each one checks. The ones that bite:
   and `docs/cli.md` together.
 - **Tests never need hardware.** No camera, NPU, audio server or running daemon.
   NPU-only tests skip on `/dev/accel`; daemon round trips are `#[ignore]`d.
+  The D-Bus interfaces are tested on a peer-to-peer connection
+  (`dbus_server.rs` tests), which also checks them against `data/dbus/*.xml`.
 - **Wayland only.** X11 is not supported.
 
 ## Conventions

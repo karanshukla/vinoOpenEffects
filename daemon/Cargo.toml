@@ -44,3 +44,9 @@ zbus_xml    = "5"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
+futures-util.workspace = true
+serde.workspace        = true
+# p2p: the D-Bus interface tests serve on a socket pair, with no bus.
+zbus = { workspace = true, features = ["p2p"] }
+tempfile = "3"
+zbus_xml = "5"

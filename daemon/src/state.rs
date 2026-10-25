@@ -50,6 +50,8 @@ pub struct DaemonState {
     pub models_ready: bool,
     pub inference_active: String,
     pub inference_detail: Option<String>,
+    /// Where `save_config` writes; `None` is the XDG default. Tests point it at a temp dir.
+    pub config_path: Option<std::path::PathBuf>,
 }
 
 impl DaemonState {
@@ -66,9 +68,17 @@ impl DaemonState {
             models_ready,
             inference_active: "cpu".into(),
             inference_detail: None,
+            config_path: None,
         };
         state.sync_inference_from_config();
         state
+    }
+
+    pub fn save_config(&self) -> Result<(), shared::error::ConfigError> {
+        match &self.config_path {
+            Some(path) => self.app.save_to(path.clone()),
+            None => self.app.save(),
+        }
     }
 
     pub fn sync_inference_from_config(&mut self) -> (String, Option<String>) {

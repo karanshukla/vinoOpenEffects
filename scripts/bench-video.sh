@@ -64,11 +64,12 @@ idle() {
 }
 
 run_one() {
-    local ep="$1" mode="$2" args="" w="" j="" nb0 nb1 r0 r1 t0 t1
-    if [ "$mode" = paced ]; then args="--fps $fps --seconds $secs"; else args="--seconds 20"; fi
+    local ep="$1" mode="$2" w="" j="" nb0 nb1 r0 r1 t0 t1
+    local -a args
+    if [ "$mode" = paced ]; then args=(--fps "$fps" --seconds "$secs"); else args=(--seconds 20); fi
     : > "$log"
     nb0=$(cat $npu_busy 2>/dev/null || echo 0)
-    VINOOPENEFFECTS_EP="$ep" "$oed" --bench-video "$clip" $args > "$log" 2>&1 &
+    VINOOPENEFFECTS_EP="$ep" "$oed" --bench-video "$clip" "${args[@]}" > "$log" 2>&1 &
     local pid=$!
     until grep -q '^# measuring' "$log"; do
         kill -0 $pid 2>/dev/null || { cat "$log" >&2; return 1; }
