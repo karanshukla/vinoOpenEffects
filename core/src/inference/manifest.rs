@@ -74,11 +74,23 @@ impl ModelManifest {
     /// hash to the manifest's recorded sha256.
     pub fn resolve_variant(&self, dir: &Path) -> Option<(&VariantSpec, PathBuf)> {
         self.model.variants.iter().find_map(|variant| {
+            if !is_plain_file_name(&variant.file) {
+                return None;
+            }
             let path = dir.join(&variant.file);
             let digest = sha256_hex(&path).ok()?;
             (digest == variant.sha256).then_some((variant, path))
         })
     }
+}
+
+/// A bare file name: `dir.join` replaces `dir` for an absolute path, and `..` walks out of it.
+fn is_plain_file_name(file: &str) -> bool {
+    let mut parts = Path::new(file).components();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
 }
 
 pub(crate) fn sha256_hex(path: &Path) -> std::io::Result<String> {
@@ -219,6 +231,40 @@ sha256 = "cafebabe"
         let (variant, path) = manifest.resolve_variant(dir.path()).unwrap();
         assert_eq!(variant.name, "fp32");
         assert_eq!(path, model_path);
+    }
+
+    #[test]
+    fn resolve_variant_ignores_files_outside_the_model_dir() {
+        let root = TempDir::new().unwrap();
+        let dir = root.path().join("selfie_segmentation");
+        std::fs::create_dir(&dir).unwrap();
+        let outside = root.path().join("elsewhere.onnx");
+        std::fs::write(&outside, b"hello").unwrap();
+        let digest = sha256_hex(&outside).unwrap();
+
+        for file in [
+            "../elsewhere.onnx".to_string(),
+            outside.display().to_string(),
+            "sub/../../elsewhere.onnx".to_string(),
+            String::new(),
+            ".".to_string(),
+        ] {
+            let mut manifest: ModelManifest = toml::from_str(SELFIE_SEG_TOML).unwrap();
+            manifest.model.variants[0].file = file.clone();
+            manifest.model.variants[0].sha256 = digest.clone();
+            assert!(
+                manifest.resolve_variant(&dir).is_none(),
+                "{file:?} resolved"
+            );
+        }
+    }
+
+    #[test]
+    fn plain_file_names_are_accepted() {
+        assert!(is_plain_file_name("selfie_segmentation.onnx"));
+        assert!(!is_plain_file_name("a/b.onnx"));
+        assert!(!is_plain_file_name(".."));
+        assert!(!is_plain_file_name("/abs.onnx"));
     }
 
     #[test]
