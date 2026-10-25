@@ -126,7 +126,7 @@ jobs:
           file: lcov.info
           fail-on-error: false
       - name: Enforce minimum line coverage
-        run: cargo llvm-cov report --summary-only --fail-under-lines 40 $COV_IGNORE
+        run: cargo llvm-cov report --summary-only --fail-under-lines 57 $COV_IGNORE
 
   build-npu:
     runs-on: ubuntu-26.04

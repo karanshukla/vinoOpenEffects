@@ -115,7 +115,7 @@ change is meant to alter the output, update the digest and say so in the PR.
 | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
 | `test` | `cargo test --workspace` under `xvfb-run`, so the GUI's accessibility tests (`gui/src/a11y_tests.rs`) build real widgets; `VINOOPENEFFECTS_REQUIRE_DISPLAY=1` makes them fail rather than skip if GTK can't start |
 | `core` | Crate boundaries (`core` links no GStreamer, GTK or PipeWire; the GUI and CLI depend on `shared` only), then `core`'s tests with no system packages installed |
-| `coverage` | `cargo llvm-cov` (without `daemon/src/bench.rs`): a summary in the job output, `lcov.info` as the `lcov` artifact, and an upload to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), which comments on each PR; fails below 40% line coverage (a Coveralls outage never fails it) |
+| `coverage` | `cargo llvm-cov` (without `daemon/src/bench.rs`): a summary in the job output, `lcov.info` as the `lcov` artifact, and an upload to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), which comments on each PR; fails below 57% line coverage (a Coveralls outage never fails it) |
 | `build-npu` | `cargo check` of the daemon with and without default features |
 | `msrv` | `cargo +1.92 test --workspace --no-run`: builds the tests and dev-dependencies too, not only the binaries |
 | `install` | `shellcheck scripts/*.sh`; `install.sh` must refuse an unwritable prefix before building; then `install.sh --no-models` into a scratch prefix, a check of every installed file, a second install over it (the upgrade path), and `uninstall.sh`, which must leave nothing behind |

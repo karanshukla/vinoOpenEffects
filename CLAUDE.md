@@ -59,7 +59,7 @@ each one checks. The ones that bite:
 - `core` fails if `vinoopeneffects-core` gains a normal dependency on GStreamer,
   GTK, libadwaita or PipeWire, or if the GUI or CLI depends on `core` or the
   daemon. Clients talk to the daemon over D-Bus only, through `shared`.
-- `coverage` fails below 40% line coverage.
+- `coverage` fails below 57% line coverage.
 - `msrv` builds the tests with Rust 1.92; keep it in step with `rust-version` in
   `Cargo.toml`.
 - `install` runs `install.sh`/`uninstall.sh` into a scratch prefix and fails on
