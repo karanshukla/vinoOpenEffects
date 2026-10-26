@@ -38,9 +38,9 @@ image.workspace = true
 libc.workspace  = true
 
 [build-dependencies]
-zbus        = { version = "5", features = ["tokio"] }
-zbus_xmlgen = "5"
-zbus_xml    = "5"
+zbus        = { version = "6", features = ["tokio"] }
+zbus_xmlgen = "6"
+zbus_xml    = "6"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
@@ -49,4 +49,4 @@ serde.workspace        = true
 # p2p: the D-Bus interface tests serve on a socket pair, with no bus.
 zbus = { workspace = true, features = ["p2p"] }
 tempfile = "3"
-zbus_xml = "5"
+zbus_xml = "6"
