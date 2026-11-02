@@ -29,6 +29,6 @@ adw = { package = "libadwaita", version = "0.9", features = ["v1_7"] }
 gstreamer.workspace = true
 
 [build-dependencies]
-zbus = { version = "5", features = ["tokio"] }
-zbus_xmlgen = "5"
-zbus_xml = "5"
+zbus = { version = "6", features = ["tokio"] }
+zbus_xmlgen = "6"
+zbus_xml = "6"
