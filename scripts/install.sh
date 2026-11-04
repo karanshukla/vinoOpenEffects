@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Build and install vinoOpenEffects from this checkout.
+# Build and install vinoOpenEffects from this checkout, or install a release
+# download's prebuilt binaries (bin/ beside scripts/; install.sh at the top
+# fetches and checks one).
 #
 #   scripts/install.sh                    # to ~/.local, no root needed
 #   sudo scripts/install.sh --prefix /usr/local   # after building as yourself, see below
@@ -20,7 +22,6 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-args="$*"
 prefix="$HOME/.local"
 gui=1
 models=1
@@ -62,24 +63,45 @@ if [ "$models" = 1 ]; then
     command -v curl >/dev/null 2>&1 || die "fetching models needs curl; install it, or pass --no-models"
 fi
 
+# From a release download, bin/ holds the binaries and nothing is built.
+prebuilt=0
+[ -x "$repo_root/bin/vinoopeneffects-daemon" ] && prebuilt=1
+
+# Without a usable ovfetch, its release binary, checked against this pin (the
+# same as vinoWhisper's ovfetch_release.json): no cargo needed.
+ovfetch_pin_version=0.6.0
+ovfetch_pin_sha256=d99be9f6aeee45d50f8f2041a2efa992955215d43f3150bef58d6426f163f2e3
+
 ovfetch="$(command -v ovfetch || true)"
 # sudo's secure_path drops ~/.cargo/bin, where `cargo install` put it.
 if [ -z "$ovfetch" ] && [ -n "$user_home" ] && [ -x "$user_home/.cargo/bin/ovfetch" ]; then
     ovfetch="$user_home/.cargo/bin/ovfetch"
 fi
-if [ -z "$ovfetch" ] && [ "$as_root" = 1 ]; then
-    die "ovfetch is not on root's PATH: sudo env PATH=\"\$PATH\" $0 $args"
-fi
-[ -n "$ovfetch" ] ||
-    die "ovfetch installs onnxruntime and is not on PATH: cargo install ovfetch --locked"
-have="$("$ovfetch" --version | awk '{print $2}')"
-if [ "$(printf '%s\n%s\n' "$ovfetch_min" "$have" | sort -V | head -1)" != "$ovfetch_min" ]; then
-    die "ovfetch $have is older than $ovfetch_min: cargo install ovfetch --locked"
+ovfetch_ok() {
+    local have
+    have="$("$1" --version 2>/dev/null | awk '{print $2}')"
+    [ -n "$have" ] && [ "$(printf '%s\n%s\n' "$ovfetch_min" "$have" | sort -V | head -1)" = "$ovfetch_min" ]
+}
+if [ -z "$ovfetch" ] || ! ovfetch_ok "$ovfetch"; then
+    [ "$(uname -m)" = x86_64 ] ||
+        die "no ovfetch $ovfetch_min or newer, and its release binary is x86_64 only: cargo install ovfetch --locked"
+    command -v curl >/dev/null 2>&1 || die "fetching ovfetch needs curl, or: cargo install ovfetch --locked"
+    ovfetch="$prefix/lib/vinoopeneffects/bin/ovfetch"
+    echo "==> ovfetch $ovfetch_pin_version (release binary, sha256-pinned)"
+    install -d "$(dirname "$ovfetch")"
+    curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 -o "$ovfetch.part" \
+        "https://github.com/karanshukla/ovfetch/releases/download/v$ovfetch_pin_version/ovfetch-x86_64-linux" ||
+        die "could not download ovfetch $ovfetch_pin_version"
+    printf '%s  %s\n' "$ovfetch_pin_sha256" "$ovfetch.part" | sha256sum --check --status ||
+        { rm -f "$ovfetch.part"; die "ovfetch $ovfetch_pin_version doesn't match its pinned sha256; installed nothing"; }
+    chmod 0755 "$ovfetch.part"
+    mv "$ovfetch.part" "$ovfetch"
 fi
 
 bindir="$prefix/bin"
 datadir="$prefix/share"
 target="${CARGO_TARGET_DIR:-$repo_root/target}/release"
+[ "$prebuilt" = 1 ] && target="$repo_root/bin"
 app_id=io.github.karanshukla.vinoopeneffects
 
 bins=(vinoopeneffects-daemon vinoopeneffects-ctl)
@@ -89,7 +111,12 @@ if [ "$gui" = 1 ]; then
     build+=(-p vinoopeneffects)
 fi
 
-if [ "$as_root" = 1 ]; then
+if [ "$prebuilt" = 1 ]; then
+    for bin in "${bins[@]}"; do
+        [ -x "$target/$bin" ] || die "$target/$bin is missing from this download"
+    done
+    echo "==> Using the release binaries in $target"
+elif [ "$as_root" = 1 ]; then
     for bin in "${bins[@]}"; do
         [ -x "$target/$bin" ] ||
             die "$target/$bin is missing; as root this script doesn't build. As yourself: cargo build --release --locked ${build[*]}"
@@ -120,6 +147,11 @@ install -d "$bindir"
 for bin in "${bins[@]}"; do
     install -m 0755 "$target/$bin" "$bindir/$bin"
 done
+# The release's one-line installer, as the upgrade command the GUI's Check
+# for Updates runs (with VINO_UPDATE_TAG set).
+if [ "$prebuilt" = 1 ] && [ -f "$repo_root/install.sh" ]; then
+    install -m 0755 "$repo_root/install.sh" "$bindir/vinoopeneffects-upgrade"
+fi
 
 install -d "$datadir/dbus-1/interfaces"
 install -m 0644 data/dbus/*.xml "$datadir/dbus-1/interfaces/"
@@ -169,6 +201,8 @@ if command -v busctl >/dev/null 2>&1; then
 fi
 if command -v systemctl >/dev/null 2>&1; then
     user_session systemctl --user daemon-reload >/dev/null 2>&1 || true
+    # A running daemon keeps the old binary until it restarts.
+    user_session systemctl --user try-restart vinoopeneffects-daemon.service >/dev/null 2>&1 || true
 fi
 if [ "$gui" = 1 ]; then
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then

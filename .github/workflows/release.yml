@@ -1,9 +1,9 @@
 name: Release
 
 # A release is a `vN` tag on main (scripts/release.sh). This turns the tag into a
-# GitHub Release: a source bundle and SHA256SUMS. There are no prebuilt binaries;
-# vinoOpenEffects installs from source (docs/install.md). CI has already run on
-# the commit, so this only checks the tag is well-formed and builds the bundle.
+# GitHub Release: a source bundle, the prebuilt binaries (built on the same image
+# as CI, so they need its glibc and GTK/libadwaita/GStreamer/PipeWire or newer),
+# install.sh (the one-line installer) and SHA256SUMS over all of them.
 
 on:
   push:
@@ -53,8 +53,44 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # The tree as the release's scripts expect it, with bin/ beside scripts/:
+  # scripts/install.sh installs those instead of building.
+  binaries:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/apt-deps
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Build
+        env:
+          VINOOPENEFFECTS_VERSION: ${{ github.ref_name }}
+        run: cargo build --release --locked -p vinoopeneffects-daemon -p vinoopeneffects-ctl -p vinoopeneffects
+      - name: Package and smoke-test
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p out
+          git archive --prefix=vinoopeneffects/ HEAD | tar -x -C out
+          printf '%s\n' "$TAG" > out/vinoopeneffects/VERSION
+          install -d out/vinoopeneffects/bin
+          for bin in vinoopeneffects-daemon vinoopeneffects-ctl vinoopeneffects; do
+            install -m 0755 "target/release/$bin" out/vinoopeneffects/bin/
+          done
+          out/vinoopeneffects/bin/vinoopeneffects-ctl --version | tee /dev/stderr | grep -qF "$TAG"
+          tar -czf vinoopeneffects-x86_64-linux.tar.gz -C out vinoopeneffects
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binaries
+          path: vinoopeneffects-x86_64-linux.tar.gz
+          if-no-files-found: error
+
   publish:
-    needs: bundle
+    needs: [bundle, binaries]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
@@ -64,6 +100,21 @@ jobs:
         with:
           name: release
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: binaries
+          path: dist
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: src
+          persist-credentials: false
+          sparse-checkout: install.sh
+          sparse-checkout-cone-mode: false
+      # The source bundle's sums came from the bundle job; one list covers everything.
+      - name: Checksums
+        run: |
+          cp src/install.sh dist/install.sh
+          (cd dist && sha256sum -- *.tar.gz install.sh > SHA256SUMS)
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         env:
@@ -73,5 +124,6 @@ jobs:
           body_path: dist/notes.md
           files: |
             dist/*.tar.gz
+            dist/install.sh
             dist/SHA256SUMS
           prerelease: false

@@ -13,6 +13,7 @@ use crate::dbus_client::{CameraInfo, CmdTx, GuiCommand, UiUpdate};
 use crate::pages::{background, center_stage, reactions, studio_light};
 use crate::preferences;
 use crate::preview::{self, Preview};
+use crate::update;
 
 /// Width of the controls column beside the preview in the wide layout.
 const CONTROLS_WIDTH: i32 = 420;
@@ -343,6 +344,7 @@ fn install_css() {
 pub(crate) fn build_primary_menu() -> gtk::MenuButton {
     let menu = gio::Menu::new();
     menu.append(Some("Preferences"), Some("win.preferences"));
+    menu.append(Some("Check for Updates"), Some("win.check-updates"));
     menu.append(Some("About vinoOpenEffects"), Some("win.about"));
     let button = gtk::MenuButton::builder()
         .icon_name("open-menu-symbolic")
@@ -398,6 +400,13 @@ fn install_menu_actions(window: &ApplicationWindow, prefs_dialog: adw::Preferenc
         action_about.connect_activate(move |_, _| about::present(&window));
     }
     window.add_action(&action_about);
+
+    let action_updates = gio::SimpleAction::new("check-updates", None);
+    {
+        let window = window.clone();
+        action_updates.connect_activate(move |_, _| update::present(&window));
+    }
+    window.add_action(&action_updates);
 }
 
 fn apply_update(w: &Widgets, update: UiUpdate) {

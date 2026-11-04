@@ -165,7 +165,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - *apt
       - *cache
-      - run: shellcheck scripts/*.sh
+      - run: shellcheck install.sh scripts/*.sh
       - name: Refuse a prefix the user can't write, before building
         run: |
           if out="$(scripts/install.sh --prefix /usr/vinoopeneffects-ci --no-models 2>&1)"; then
