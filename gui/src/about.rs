@@ -4,6 +4,44 @@ use adw::prelude::*;
 
 use crate::constants::APP_ID;
 
+/// The family's site and the other vinoPilot apps with their pages there: a
+/// copy of vino-ui's `family` (karanshukla/vinoUserInterface, src/family.rs),
+/// which the other Rust apps use directly. Not a dependency here because the
+/// crate needs Rust 1.95 and this workspace builds on 1.92; keep it in step.
+const SITE: (&str, &str) = ("vinopilot.ca", "https://vinopilot.ca/");
+const OTHER_APPS: [(&str, &str, &str); 6] = [
+    (
+        "vinoWhisper",
+        "Live captions and voice typing",
+        "https://vinopilot.ca/apps/#vinowhisper",
+    ),
+    (
+        "vinoAuthFace",
+        "Unlock with your face",
+        "https://vinopilot.ca/apps/#vinoauthface",
+    ),
+    (
+        "vinoPop",
+        "AI actions on any text you select",
+        "https://vinopilot.ca/apps/#vinopop",
+    ),
+    (
+        "vinoSpeak",
+        "Natural-sounding text-to-speech",
+        "https://vinopilot.ca/apps/#vinospeak",
+    ),
+    (
+        "vinoSearch",
+        "Find files by what they're about",
+        "https://vinopilot.ca/apps/#vinosearch",
+    ),
+    (
+        "vinoWatch",
+        "See what your NPU is doing",
+        "https://vinopilot.ca/apps/#vinowatch",
+    ),
+];
+
 pub fn present(parent: &impl IsA<gtk::Widget>) {
     let about = adw::AboutDialog::builder()
         .application_name("vinoOpenEffects")
@@ -26,6 +64,12 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
         "openeffects (upstream)",
         "https://github.com/funinkina/openeffects",
     );
+    // The family, as every vinoPilot app lists it: the site, then the
+    // other apps (under Details).
+    about.add_link(SITE.0, SITE.1);
+    for (name, blurb, page) in OTHER_APPS {
+        about.add_link(&format!("{name}: {blurb}"), page);
+    }
 
     about.present(Some(parent));
 }
