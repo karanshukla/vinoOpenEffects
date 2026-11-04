@@ -25,6 +25,8 @@ pub struct Widgets {
     /// Node name of the virtual camera, shown on the "Virtual Camera" row.
     pub virtual_cam_label: gtk::Label,
     pub model_rows: HashMap<&'static str, adw::ActionRow>,
+    /// Says how to fetch models, only while some are missing.
+    pub models_group: adw::PreferencesGroup,
     pub inference_row: adw::ActionRow,
     pub inference_group: adw::ToggleGroup,
     #[allow(dead_code)]
@@ -33,7 +35,6 @@ pub struct Widgets {
     pub inference_toggle_cpu: adw::Toggle,
     pub inference_toggle_npu: adw::Toggle,
     pub inference_handler: glib::SignalHandlerId,
-    pub inference_badge: gtk::Label,
 }
 
 pub fn build(
@@ -94,13 +95,13 @@ pub(crate) fn build_page(
     page.add(&camera_group);
 
     let inference_group_box = pref_group(
-        "Inference",
-        "Machine learning execution provider for effects (hot-swappable)",
+        "Processor",
+        "Where the effect models run. Auto picks the NPU when there is one",
     );
 
     let inference_row = adw::ActionRow::builder()
-        .title("Execution Provider")
-        .subtitle("Auto selects NPU when available, falls back to CPU")
+        .title("Run Models On")
+        .subtitle("Using the CPU")
         .build();
 
     let inference_toggle_auto = adw::Toggle::builder().name("auto").label("Auto").build();
@@ -115,13 +116,7 @@ pub(crate) fn build_page(
     inference_group.add(inference_toggle_cpu.clone());
     inference_group.add(inference_toggle_npu.clone());
     inference_group.set_active_name(Some("auto"));
-    inference_group.update_property(&[gtk::accessible::Property::Label("Execution provider")]);
-
-    let inference_badge = gtk::Label::builder()
-        .label("Active: CPU")
-        .valign(gtk::Align::Center)
-        .css_classes(["dim-label"])
-        .build();
+    inference_group.update_property(&[gtk::accessible::Property::Label("Run models on")]);
 
     let inference_handler = {
         let cmd_tx = cmd_tx.clone();
@@ -132,22 +127,11 @@ pub(crate) fn build_page(
         })
     };
 
-    let suffix_box = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(12)
-        .valign(gtk::Align::Center)
-        .build();
-    suffix_box.append(&inference_badge);
-    suffix_box.append(&inference_group);
-
-    inference_row.add_suffix(&suffix_box);
+    inference_row.add_suffix(&inference_group);
     inference_group_box.add(&inference_row);
     page.add(&inference_group_box);
 
-    let models_group = pref_group(
-        "Bundled Models",
-        "Run scripts/fetch-models.sh to install missing models",
-    );
+    let models_group = adw::PreferencesGroup::builder().title("Models").build();
     let mut model_rows = HashMap::new();
     for (id, name, purpose) in BUNDLED_MODELS {
         let row = adw::ActionRow::builder()
@@ -155,7 +139,7 @@ pub(crate) fn build_page(
             .subtitle(*purpose)
             .build();
         let pill = gtk::Label::builder()
-            .label("checking…")
+            .label("Checking…")
             .css_classes(["dim-label"])
             .build();
         row.add_suffix(&pill);
@@ -168,14 +152,14 @@ pub(crate) fn build_page(
     let startup = pref_group("Startup", "Control when the vinoOpenEffects daemon runs");
 
     let keep_running_row = adw::SwitchRow::builder()
-        .title("Keep running in the background")
+        .title("Run in Background")
         .subtitle("Leave the daemon on after this window closes")
         .active(gui_config.borrow().keep_running_in_background)
         .build();
 
     let boot_row = adw::SwitchRow::builder()
-        .title("Start when I log in")
-        .subtitle("Launch the daemon automatically")
+        .title("Start at Login")
+        .subtitle("Start the daemon when you log in")
         .active(shared::systemd::is_enabled())
         .build();
     keep_running_row.set_sensitive(!boot_row.is_active());
@@ -216,13 +200,13 @@ pub(crate) fn build_page(
             camera_ids,
             virtual_cam_label,
             model_rows,
+            models_group,
             inference_row,
             inference_group,
             inference_toggle_auto,
             inference_toggle_cpu,
             inference_toggle_npu,
             inference_handler,
-            inference_badge,
         },
     )
 }

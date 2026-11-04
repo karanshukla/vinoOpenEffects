@@ -186,7 +186,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     let custom_provider = gtk::CssProvider::new();
     add_provider(&custom_provider);
     let custom = gtk::Button::builder()
-        .tooltip_text("Custom color…")
+        .tooltip_text("Custom Color…")
         .css_classes(["oe-swatch-btn", "flat"])
         .build();
     custom.update_property(&[gtk::accessible::Property::Label("Custom color")]);
@@ -199,7 +199,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         custom.connect_clicked(move |b| open_color_dialog(b, &cmd_tx, &provider));
     }
     swatch_box.append(&custom);
-    let colors_row = plain_row(&labelled(&section_label("Solid colors"), &swatch_box));
+    let colors_row = plain_row(&labelled(&section_label("Solid Colors"), &swatch_box));
     card.add_row(&colors_row);
 
     let widgets = Widgets {
@@ -503,6 +503,7 @@ fn image_preset_button(label: &str, path: &std::path::Path) -> gtk::ToggleButton
         .width_request(IMAGE_THUMB_WIDTH)
         .height_request(IMAGE_THUMB_HEIGHT)
         .css_classes(["oe-bg-thumb"])
+        .overflow(gtk::Overflow::Hidden)
         .accessible_role(gtk::AccessibleRole::Presentation)
         .build();
     button.set_child(Some(&picture));
@@ -552,8 +553,7 @@ fn set_custom_color(provider: &gtk::CssProvider, hex: &str) {
 /// Every preset is dark, so on a dark card only the border separates it; see #76.
 pub(crate) const SWATCH_CSS: &str = ".oe-swatch { border-radius: 50%; border: 1px solid alpha(currentColor, 0.2); } \
      .oe-swatch-btn { padding: 4px; min-width: 0; min-height: 0; } \
-     .oe-bg-thumb { border-radius: 10px; border: 1px solid alpha(currentColor, 0.2); \
-     overflow: hidden; } \
+     .oe-bg-thumb { border-radius: 10px; border: 1px solid alpha(currentColor, 0.2); } \
      .oe-custom-image { background-color: alpha(currentColor, 0.08); } \
      @media (prefers-color-scheme: dark) { \
        .oe-swatch { border-color: alpha(currentColor, 0.6); } } \

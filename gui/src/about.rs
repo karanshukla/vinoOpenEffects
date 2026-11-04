@@ -57,7 +57,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
         .build();
 
     about.add_credit_section(
-        Some("Original author of openeffects"),
+        Some("Original Author of openeffects"),
         &["Aryan Kushwaha https://github.com/funinkina"],
     );
     about.add_link(
