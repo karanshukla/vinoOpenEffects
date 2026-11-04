@@ -8,6 +8,7 @@ mod dbus_client;
 mod pages;
 mod preferences;
 mod preview;
+mod update;
 mod widgets;
 
 use adw::glib;

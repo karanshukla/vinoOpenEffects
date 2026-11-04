@@ -41,7 +41,7 @@ if command -v systemctl >/dev/null 2>&1; then
     user_session systemctl --user disable --now vinoopeneffects-daemon.service >/dev/null 2>&1 || true
 fi
 
-rm -f "$bindir/vinoopeneffects-daemon" "$bindir/vinoopeneffects-ctl" "$bindir/vinoopeneffects"
+rm -f "$bindir/vinoopeneffects-daemon" "$bindir/vinoopeneffects-ctl" "$bindir/vinoopeneffects" "$bindir/vinoopeneffects-upgrade"
 rm -f "$datadir"/dbus-1/interfaces/"$app_id".*.xml
 rm -f "$datadir/dbus-1/services/$app_id.Daemon.service"
 rm -f "$datadir/systemd/user/vinoopeneffects-daemon.service"
