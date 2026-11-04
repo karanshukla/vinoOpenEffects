@@ -69,6 +69,32 @@ On openSUSE Aeon and MicroOS the same applies with a Tumbleweed distrobox and
 
 ## Installing
 
+### From a release
+
+```bash
+curl -fsSL https://github.com/karanshukla/vinoOpenEffects/releases/latest/download/install.sh | bash
+```
+
+That downloads the release's `SHA256SUMS` and `vinoopeneffects-x86_64-linux.tar.gz`, refuses
+the tarball unless it's listed there and matches, and runs the release's own
+`scripts/install.sh` from a temporary directory. With `bin/` beside `scripts/` it installs
+those binaries instead of building, so there's no Rust toolchain to install. Options go after
+`bash -s --` (`--no-gui`, `--no-models`, `vN` for a specific release; with `sudo`,
+`--prefix /usr/local`). The binaries are built on Ubuntu 26.04, the same image as CI, so they
+need its glibc and GTK/libadwaita/GStreamer/PipeWire or newer; on an older distro, build from
+source. Releases before v4 have no binaries.
+
+ovfetch is still what installs onnxruntime. Without ovfetch 0.5.0 or newer on `PATH`, the
+script downloads ovfetch's own release binary into `lib/vinoopeneffects/bin/`, checked against
+a sha256 pinned in the script.
+
+Every release install also leaves `install.sh` as `vinoopeneffects-upgrade`. **Check for
+Updates** in the window's menu asks GitHub for the newest release (only when you click it) and
+offers to run it; `vinoopeneffects-upgrade` (or `vinoopeneffects-upgrade v5`) does the same from
+a terminal. It restarts the daemon if it was running, so the camera pauses for a moment.
+
+### From a checkout
+
 ```bash
 scripts/install.sh                          # into ~/.local, no root
 scripts/install.sh --no-gui                 # daemon and CLI only

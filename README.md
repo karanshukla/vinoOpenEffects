@@ -24,12 +24,16 @@ the virtual one. Wayland only. Forked from OpenEffects in order to add NPU suppo
 
 ## Quick start
 
-From source, into `~/.local` with no root (requirements are in
-[docs/install.md](docs/install.md)):
+The latest release's prebuilt binaries, into `~/.local` with no root
+(requirements are in [docs/install.md](docs/install.md)):
 
 ```bash
-scripts/install.sh            # add --no-gui for the daemon and CLI only
+curl -fsSL https://github.com/karanshukla/vinoOpenEffects/releases/latest/download/install.sh | bash
 ```
+
+Add `-s -- --no-gui` after `bash` for the daemon and CLI only. From a checkout,
+`scripts/install.sh` builds from source instead. To upgrade, use **Check for
+Updates** in the window's menu, or run `vinoopeneffects-upgrade`.
 
 It fetches the sha256-verified models and has
 [ovfetch](https://github.com/karanshukla/ovfetch) install the onnxruntime that
