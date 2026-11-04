@@ -276,8 +276,8 @@ pub fn plain_row(child: &impl IsA<gtk::Widget>) -> gtk::ListBoxRow {
         .build()
 }
 
-/// A small heading that splits an effect card into sections ("On you",
-/// "Behind you", "Images", ...).
+/// A small heading that splits an effect card into sections ("On You",
+/// "Behind You", "Images", ...).
 pub fn section_label(text: &str) -> gtk::Label {
     gtk::Label::builder()
         .label(text)
@@ -356,7 +356,7 @@ impl EffectCard {
         self.switch.is_active()
     }
 
-    /// The one-line summary under the effect name ("Normal zoom · One face").
+    /// The one-line summary under the effect name ("Normal zoom · one face").
     pub fn set_summary(&self, summary: &str) {
         self.expander.set_subtitle(summary);
     }

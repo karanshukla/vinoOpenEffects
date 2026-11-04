@@ -3,7 +3,10 @@
 //! (background brightness). The lift is applied to the person only
 //! (foreground) and the background brightness to the complementary area
 //! (inverted mask). An "Auto light" switch and strength slider drive the
-//! NPU-only low-light model. Turning the switch off disables the sliders.
+//! NPU-only low-light model, insensitive without an NPU. Turning the switch
+//! off disables the sliders.
+
+use std::cell::Cell;
 
 use adw::prelude::*;
 use shared::dbus::{VariantMap, bool_value, value_as_bool, value_as_i32, value_as_u32};
@@ -23,9 +26,15 @@ pub struct Widgets {
     auto_light: adw::SwitchRow,
     auto_light_handler: gtk::glib::SignalHandlerId,
     auto_strength: SliderCtl,
+    auto_strength_row: gtk::ListBoxRow,
     /// Dimmed while Studio Light is off.
     rows: Vec<gtk::ListBoxRow>,
+    on: Cell<bool>,
+    npu: Cell<bool>,
 }
+
+const AUTO_LIGHT_SUBTITLE: &str = "A low-light model that brightens a dim room";
+const AUTO_LIGHT_NO_NPU: &str = "Needs an Intel NPU";
 
 pub fn build(cmd_tx: &CmdTx) -> Widgets {
     let card = {
@@ -38,7 +47,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         })
     };
 
-    let on_you = plain_row(&section_label("On you"));
+    let on_you = plain_row(&section_label("On You"));
     let (intensity_row, intensity) = slider_row_u32(
         "Intensity",
         "",
@@ -69,10 +78,10 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         "contrast",
         cmd_tx,
     );
-    let auto_section = plain_row(&section_label("Auto light"));
+    let auto_section = plain_row(&section_label("Auto Light"));
     let auto_light = adw::SwitchRow::builder()
-        .title("Brighten dark frames")
-        .subtitle("A low-light model; needs an NPU and does nothing without one")
+        .title("Brighten Dark Frames")
+        .subtitle(AUTO_LIGHT_NO_NPU)
         .build();
     let auto_light_handler = {
         let cmd_tx = cmd_tx.clone();
@@ -94,7 +103,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         "auto_strength",
         cmd_tx,
     );
-    let behind_you = plain_row(&section_label("Behind you"));
+    let behind_you = plain_row(&section_label("Behind You"));
     let (bg_row, bg_brightness) = slider_row_i32(
         "Brightness",
         "Darken or brighten the room so you stand out",
@@ -116,7 +125,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         contrast_row,
         auto_section,
         auto_light.clone().upcast::<gtk::ListBoxRow>(),
-        auto_strength_row,
+        auto_strength_row.clone(),
         behind_you,
         bg_row,
     ];
@@ -133,11 +142,40 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         auto_light,
         auto_light_handler,
         auto_strength,
+        auto_strength_row,
         rows,
+        on: Cell::new(false),
+        npu: Cell::new(false),
     }
 }
 
 impl Widgets {
+    /// Auto light runs only on an NPU, so without one its rows stay insensitive.
+    pub fn set_npu_available(&self, npu: bool) {
+        self.npu.set(npu);
+        self.auto_light.set_subtitle(if npu {
+            AUTO_LIGHT_SUBTITLE
+        } else {
+            AUTO_LIGHT_NO_NPU
+        });
+        self.update_sensitivity();
+    }
+
+    #[cfg(test)]
+    pub fn auto_light_sensitive(&self) -> bool {
+        self.auto_light.is_sensitive() && self.auto_strength_row.is_sensitive()
+    }
+
+    fn update_sensitivity(&self) {
+        let on = self.on.get();
+        for row in &self.rows {
+            row.set_sensitive(on);
+        }
+        let auto = on && self.npu.get();
+        self.auto_light.set_sensitive(auto);
+        self.auto_strength_row.set_sensitive(auto);
+    }
+
     pub fn apply(&self, params: &VariantMap) {
         if let Some(on) = params.get("enabled").and_then(value_as_bool) {
             self.card.set_on(on);
@@ -146,9 +184,8 @@ impl Widgets {
             } else {
                 "Off"
             });
-            for row in &self.rows {
-                row.set_sensitive(on);
-            }
+            self.on.set(on);
+            self.update_sensitivity();
         }
         if let Some(v) = params.get("intensity").and_then(value_as_u32) {
             self.intensity.set_value(v as f64);

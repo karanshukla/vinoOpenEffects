@@ -46,6 +46,8 @@ pub enum GuiCommand {
     SetInferenceProvider(String),
     /// Forget recorded NPU failures and reload the models.
     RetryInference,
+    /// Start the pipeline again after it stopped or failed.
+    Start,
     /// Terminate the daemon process, then acknowledge with `UiUpdate::DaemonQuit`
     /// so the GUI can finish closing only after the call has been delivered.
     QuitDaemon,
@@ -183,6 +185,11 @@ async fn run_once(
                     Some(GuiCommand::RetryInference) => {
                         if let Err(err) = daemon.retry_inference().await {
                             tracing::warn!(%err, "RetryInference failed");
+                        }
+                    }
+                    Some(GuiCommand::Start) => {
+                        if let Err(err) = daemon.start().await {
+                            tracing::warn!(%err, "Start failed");
                         }
                     }
                     Some(GuiCommand::QuitDaemon) => {

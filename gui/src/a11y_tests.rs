@@ -385,4 +385,13 @@ fn every_control_has_an_accessible_name() {
         "accessibility problems:\n{}",
         audit.problems.join("\n")
     );
+
+    // GTK runs on one thread per process, so this rides along here.
+    let enabled: shared::dbus::VariantMap =
+        [("enabled".to_string(), shared::dbus::bool_value(true))].into();
+    studio_light.apply(&enabled);
+    for npu in [false, true] {
+        studio_light.set_npu_available(npu);
+        assert_eq!(studio_light.auto_light_sensitive(), npu, "npu {npu}");
+    }
 }

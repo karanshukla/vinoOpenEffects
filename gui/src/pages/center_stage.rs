@@ -1,6 +1,6 @@
 //! Center Stage card: the effect switch in the header, zoom and tracking-mode
 //! segmented controls inside. The header summary reads back the current
-//! framing ("Normal zoom · One face").
+//! framing ("Normal zoom · one face").
 
 use adw::prelude::*;
 use shared::dbus::{VariantMap, value_as_bool, value_as_string};
@@ -84,7 +84,8 @@ impl Widgets {
         }
         let zoom = label_for(FRAMING_LEVELS, self.framing.group.active_name().as_deref());
         let mode = label_for(FRAMING_MODES, self.mode.group.active_name().as_deref());
-        self.card.set_summary(&format!("{zoom} zoom · {mode}"));
+        self.card
+            .set_summary(&format!("{zoom} zoom · {}", mode.to_lowercase()));
     }
 }
 

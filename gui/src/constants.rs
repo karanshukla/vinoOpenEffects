@@ -17,7 +17,7 @@ pub const FRAMING_LEVELS: &[(&str, &str)] = &[
 ];
 
 /// Center Stage tracking mode (stored value, display label).
-pub const FRAMING_MODES: &[(&str, &str)] = &[("single", "One face"), ("group", "Whole group")];
+pub const FRAMING_MODES: &[(&str, &str)] = &[("single", "One Face"), ("group", "Whole Group")];
 
 /// Background card modes (stored value, display label). These are virtual:
 /// they map onto the `portrait_blur` / `bg_replace` enable flags. The card's
@@ -72,8 +72,8 @@ pub const BG_IMAGE_PRESETS: &[(&str, &str, &[u8])] = &[
 /// fires a one-shot reverse-rain burst, independent of the gesture toggle.
 pub const REACTION_BUTTONS: &[(&str, &str, &str)] = &[
     ("heart", "\u{1F496}", "Heart"),
-    ("thumbs_up", "\u{1F44D}", "Thumbs up"),
-    ("thumbs_down", "\u{1F44E}", "Thumbs down"),
+    ("thumbs_up", "\u{1F44D}", "Thumbs Up"),
+    ("thumbs_down", "\u{1F44E}", "Thumbs Down"),
     ("tada", "\u{1F389}", "Celebrate"),
     ("clap", "\u{1F44F}", "Applause"),
     ("wave", "\u{1F44B}", "Wave"),

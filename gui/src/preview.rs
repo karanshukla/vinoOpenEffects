@@ -83,11 +83,11 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         .css_classes(["oe-preview-status"])
         .build();
     let retry_btn = gtk::Button::builder()
-        .label("Try again")
+        .label("Try Again")
         .css_classes(["oe-pill-button"])
         .build();
     let restart_btn = gtk::Button::builder()
-        .label("Restart camera services")
+        .label("Restart Camera Services")
         .tooltip_text(
             "Restarts WirePlumber and the vinoOpenEffects daemon. \
              Other apps may briefly lose camera or audio routing.",
@@ -160,7 +160,7 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
             .accessible_role(gtk::AccessibleRole::Presentation)
             .build(),
     );
-    compare_content.append(&gtk::Label::new(Some("Hold to compare")));
+    compare_content.append(&gtk::Label::new(Some("Hold to Compare")));
     let compare = gtk::Button::builder()
         .child(&compare_content)
         .tooltip_text("Hold to see your camera without effects")
@@ -262,7 +262,7 @@ impl Preview {
                 && preview.attempt.get() == attempt
                 && !preview.has_frames.get()
             {
-                preview.show_problem("No picture from the virtual camera yet.");
+                preview.show_problem("No picture from the virtual camera yet");
             }
         });
 
@@ -273,7 +273,9 @@ impl Preview {
                     *self.pipeline.borrow_mut() = Some(pipeline);
                 }
                 Err(err) => {
-                    self.show_problem(&format!("Preview unavailable: {err}"));
+                    self.show_problem(
+                        &missing_plugin().unwrap_or(format!("Preview unavailable: {err}")),
+                    );
                     return;
                 }
             }
@@ -314,6 +316,8 @@ impl Preview {
     }
 
     fn show_problem(&self, text: &str) {
+        // Or the no-frames timer replaces a specific reason with a vague one.
+        self.attempt.set(self.attempt.get().wrapping_add(1));
         self.status.set_visible(false);
         self.live_pill.set_visible(false);
         self.problem_text.set_label(text);
@@ -420,4 +424,32 @@ impl Preview {
 
         Ok(pipeline)
     }
+}
+
+/// Which GStreamer plugin the preview lacks, in words, with the package that
+/// has it (`docs/install.md`).
+fn missing_plugin() -> Option<String> {
+    let (what, packages) = [
+        (
+            "pipewiresrc",
+            "PipeWire",
+            "pipewire-gstreamer, gstreamer1.0-pipewire or gst-plugin-pipewire",
+        ),
+        (
+            "videoconvert",
+            "video convert",
+            "gstreamer1-plugins-base or gstreamer1.0-plugins-base",
+        ),
+        (
+            "gtk4paintablesink",
+            "GTK 4",
+            "gstreamer1-plugin-gtk4, gstreamer1.0-gtk4 or gst-plugin-gtk4",
+        ),
+    ]
+    .into_iter()
+    .find(|(element, _, _)| gst::ElementFactory::find(element).is_none())
+    .map(|(_, what, packages)| (what, packages))?;
+    Some(format!(
+        "The preview needs GStreamer's {what} plugin. Install {packages}, then try again"
+    ))
 }

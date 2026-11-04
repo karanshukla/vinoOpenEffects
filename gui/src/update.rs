@@ -139,9 +139,9 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
                 } else {
                     format!("The newest release is {latest}. This is a development build.")
                 };
-                alert("Up to date", &body).present(Some(&parent));
+                alert("Up to Date", &body).present(Some(&parent));
             }
-            Err(why) => alert("Couldn't check for updates", &why).present(Some(&parent)),
+            Err(why) => alert("Couldn't Check for Updates", &why).present(Some(&parent)),
         }
     });
 }
@@ -157,12 +157,12 @@ fn offer(parent: &gtk::Widget, tag: String) {
             "{tag} is out. This install wasn't made by the release installer; its release page says how to update."
         )
     };
-    let dialog = adw::AlertDialog::new(Some("Update available"), Some(&body));
-    dialog.add_response("cancel", "Not now");
+    let dialog = adw::AlertDialog::new(Some("Update Available"), Some(&body));
+    dialog.add_response("cancel", "Not Now");
     let action = if upgrade.is_some() {
         format!("Update to {tag}")
     } else {
-        "Open release page".into()
+        "Open Release Page".into()
     };
     dialog.add_response("go", &action);
     dialog.set_response_appearance("go", adw::ResponseAppearance::Suggested);
@@ -208,7 +208,7 @@ fn run_install(parent: &gtk::Widget, upgrade: PathBuf, tag: String) {
                 "Updated".to_string(),
                 format!("Restart vinoOpenEffects to use {tag}."),
             ),
-            Err(why) => (format!("Couldn't install {tag}"), why),
+            Err(why) => (format!("Couldn't Install {tag}"), why),
         };
         alert(&heading, &body).present(Some(&parent));
     });

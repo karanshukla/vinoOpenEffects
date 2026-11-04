@@ -33,7 +33,6 @@ struct Widgets {
     preview: Rc<Preview>,
     bypass_switch: gtk::Switch,
     bypass_handler: glib::SignalHandlerId,
-    bypass_label: gtk::Label,
     /// The effect cards, dimmed while every effect is bypassed.
     cards: gtk::Box,
     /// True while "Hold to compare" is pressed; the resulting bypass echoes
@@ -95,7 +94,7 @@ pub fn build_window(
     let menu_button = build_primary_menu();
 
     let bypass_label = gtk::Label::builder()
-        .label("Effects on")
+        .label("Effects")
         .css_classes(["heading"])
         .build();
     let bypass_switch = gtk::Switch::builder()
@@ -106,9 +105,7 @@ pub fn build_window(
     bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
     let bypass_handler = {
         let cmd_tx = cmd_tx.clone();
-        let bypass_label = bypass_label.clone();
         bypass_switch.connect_active_notify(move |sw| {
-            set_effects_label(&bypass_label, sw.is_active());
             let _ = cmd_tx.send(GuiCommand::SetBypass {
                 on: !sw.is_active(),
             });
@@ -125,7 +122,16 @@ pub fn build_window(
     header.pack_start(&bypass_box);
     header.pack_end(&menu_button);
 
-    let banner = adw::Banner::builder().revealed(false).build();
+    let banner = adw::Banner::builder()
+        .revealed(false)
+        .button_label("Start")
+        .build();
+    {
+        let cmd_tx = cmd_tx.clone();
+        banner.connect_button_clicked(move |_| {
+            let _ = cmd_tx.send(GuiCommand::Start);
+        });
+    }
     let inference_banner = adw::Banner::builder()
         .revealed(false)
         .button_label("Retry NPU")
@@ -156,6 +162,9 @@ pub fn build_window(
     add_narrow_breakpoint(&window, &body, &preview, &controls, &cards);
 
     install_menu_actions(&window, prefs_dialog);
+    app.set_accels_for_action("win.preferences", &["<Control>comma"]);
+    // One window, so Quit and Close are the same; closing keeps the daemon rules above.
+    app.set_accels_for_action("win.close", &["<Control>w", "<Control>q"]);
 
     let comparing = Rc::new(Cell::new(false));
     wire_compare(&preview.compare, &bypass_switch, &cmd_tx, &comparing);
@@ -171,7 +180,6 @@ pub fn build_window(
         preview,
         bypass_switch,
         bypass_handler,
-        bypass_label,
         cards,
         comparing,
     });
@@ -300,10 +308,6 @@ fn is_activate_key(key: gtk::gdk::Key) -> bool {
     )
 }
 
-fn set_effects_label(label: &gtk::Label, on: bool) {
-    label.set_label(if on { "Effects on" } else { "Effects off" });
-}
-
 /// App-wide styling for the preview frame, its floating pills and the
 /// effect-card icons. Font sizes are relative so they follow text scaling;
 /// `a11y_tests` checks the text colours' contrast, over any video frame.
@@ -407,6 +411,13 @@ fn install_menu_actions(window: &ApplicationWindow, prefs_dialog: adw::Preferenc
         action_updates.connect_activate(move |_, _| update::present(&window));
     }
     window.add_action(&action_updates);
+
+    let action_close = gio::SimpleAction::new("close", None);
+    {
+        let window = window.clone();
+        action_close.connect_activate(move |_, _| window.close());
+    }
+    window.add_action(&action_close);
 }
 
 fn apply_update(w: &Widgets, update: UiUpdate) {
@@ -447,16 +458,18 @@ fn apply_effect(w: &Widgets, id: &str, params: &VariantMap) {
 /// Banners are for states the user should act on; running/idle/starting are
 /// normal so the banner stays hidden for them.
 fn apply_status_banner(w: &Widgets, status: &str) {
+    // (title, whether Start can fix it); "disconnected" reconnects on its own.
     let message = match status {
-        "stopped" => Some("Pipeline stopped"),
-        "error" => Some("The pipeline reported an error"),
-        "disconnected" => Some("vinoOpenEffects daemon is not running, please start it..."),
+        "stopped" => Some(("Virtual camera stopped", true)),
+        "error" => Some(("Virtual camera stopped by an error", true)),
+        "disconnected" => Some(("Can't reach the effects daemon", false)),
         _ => None,
     };
     match message {
-        Some(text) => {
+        Some((text, startable)) => {
             let changed = !w.banner.is_revealed() || w.banner.title() != text;
             w.banner.set_title(text);
+            w.banner.set_button_label(startable.then_some("Start"));
             w.banner.set_revealed(true);
             if changed {
                 w.banner
@@ -478,6 +491,11 @@ fn apply_capabilities(w: &Widgets, caps: &VariantMap) {
         .unwrap_or_else(|| "—".into());
 
     w.prefs.virtual_cam_label.set_label(&vcam);
+    w.prefs.models_group.set_description(if ready {
+        None
+    } else {
+        Some("Run the installer again to fetch them; vinoopeneffects-ctl doctor lists what's missing")
+    });
     w.preview.node_pill.set_label(&vcam);
 
     let (pill_text, pill_class, stale_class) = if ready {
@@ -528,8 +546,9 @@ fn apply_inference(
 ) {
     let has_npu = available.iter().any(|s| s == "npu");
     w.prefs.inference_toggle_npu.set_enabled(has_npu);
+    w.studio_light.set_npu_available(has_npu);
     if !has_npu {
-        let tip = detail.unwrap_or("Intel NPU hardware or OpenVINO execution provider unavailable");
+        let tip = detail.unwrap_or("No Intel NPU, or no OpenVINO runtime for it");
         w.prefs.inference_toggle_npu.set_tooltip(tip);
     } else {
         w.prefs.inference_toggle_npu.set_tooltip("");
@@ -545,33 +564,7 @@ fn apply_inference(
             .unblock_signal(&w.prefs.inference_handler);
     }
 
-    let (badge_text, badge_class) = match active {
-        "npu" => ("Active: NPU", "success"),
-        "mixed" => ("Active: Mixed", "accent"),
-        _ => ("Active: CPU", "dim-label"),
-    };
-    w.prefs.inference_badge.set_label(badge_text);
-    w.prefs.inference_badge.remove_css_class("dim-label");
-    w.prefs.inference_badge.remove_css_class("success");
-    w.prefs.inference_badge.remove_css_class("warning");
-    w.prefs.inference_badge.remove_css_class("accent");
-    w.prefs.inference_badge.add_css_class(badge_class);
-
-    if let Some(d) = detail {
-        if !d.is_empty() {
-            w.prefs
-                .inference_row
-                .set_subtitle(&format!("Falling back to CPU: {d}"));
-        } else {
-            w.prefs
-                .inference_row
-                .set_subtitle("Auto selects NPU when available, falls back to CPU");
-        }
-    } else {
-        w.prefs
-            .inference_row
-            .set_subtitle("Auto selects NPU when available, falls back to CPU");
-    }
+    set_inference_status(w, active, detail.unwrap_or_default());
 }
 
 /// Says when an NPU is present but unused, why, and offers a retry.
@@ -595,27 +588,22 @@ fn apply_inference_banner(w: &Widgets, degraded: bool, detail: Option<&str>) {
 }
 
 fn apply_inference_changed(w: &Widgets, active: &str, detail: &str) {
-    let (badge_text, badge_class) = match active {
-        "npu" => ("Active: NPU", "success"),
-        "mixed" => ("Active: Mixed", "accent"),
-        _ => ("Active: CPU", "dim-label"),
-    };
-    w.prefs.inference_badge.set_label(badge_text);
-    w.prefs.inference_badge.remove_css_class("dim-label");
-    w.prefs.inference_badge.remove_css_class("success");
-    w.prefs.inference_badge.remove_css_class("warning");
-    w.prefs.inference_badge.remove_css_class("accent");
-    w.prefs.inference_badge.add_css_class(badge_class);
+    set_inference_status(w, active, detail);
+}
 
-    if !detail.is_empty() {
-        w.prefs
-            .inference_row
-            .set_subtitle(&format!("Falling back to CPU: {detail}"));
+/// The inference row's subtitle: where the models run now, or why not on the NPU.
+fn set_inference_status(w: &Widgets, active: &str, detail: &str) {
+    let status = if !detail.is_empty() {
+        format!("Falling back to CPU: {detail}")
     } else {
-        w.prefs
-            .inference_row
-            .set_subtitle("Auto selects NPU when available, falls back to CPU");
-    }
+        match active {
+            "npu" => "Using the NPU",
+            "mixed" => "Using the NPU and the CPU",
+            _ => "Using the CPU",
+        }
+        .to_string()
+    };
+    w.prefs.inference_row.set_subtitle(&status);
 }
 
 fn apply_cameras(w: &Widgets, cameras: &[CameraInfo], active: &str) {
@@ -633,7 +621,10 @@ fn apply_cameras(w: &Widgets, cameras: &[CameraInfo], active: &str) {
     w.prefs.camera_combo.set_selected(active_idx);
     w.prefs.camera_combo.unblock_signal(&w.prefs.camera_handler);
 
+    w.prefs.camera_combo.set_sensitive(!cameras.is_empty());
+
     let dropdown = &w.preview.camera_dropdown;
+    dropdown.set_sensitive(!cameras.is_empty());
     dropdown.block_signal(&w.preview.camera_handler);
     dropdown.set_model(Some(&model));
     dropdown.set_selected(active_idx);
@@ -660,7 +651,6 @@ fn apply_bypass(w: &Widgets, on: bool) {
     w.bypass_switch.block_signal(&w.bypass_handler);
     w.bypass_switch.set_active(!on);
     w.bypass_switch.unblock_signal(&w.bypass_handler);
-    set_effects_label(&w.bypass_label, !on);
     w.cards.set_sensitive(!on);
     w.preview.compare.set_sensitive(!on);
 }

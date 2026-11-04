@@ -66,7 +66,7 @@ a consumer starts streaming. If it never does, `doctor`'s `camera: selected`
 line and the journal say which device failed and why.
 
 **The GUI preview says "PipeWire can't find the virtual camera".** WirePlumber
-lost track of the node. The preview's **Restart camera services** button runs
+lost track of the node. The preview's **Restart Camera Services** button runs
 `systemctl --user restart wireplumber vinoopeneffects-daemon`.
 
 **The feed is laggy or the frame rate sags in dim light.** See
