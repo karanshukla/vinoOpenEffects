@@ -79,7 +79,7 @@ pub fn probe_npu() -> NpuProbe {
     if !npu_present() {
         return NpuProbe {
             available: false,
-            reason: Some("no Intel NPU hardware detected (/dev/accel has no accel nodes)".into()),
+            reason: Some("no Intel NPU hardware detected (no intel_vpu node in /dev/accel)".into()),
         };
     }
     if shared::accel::probe().denied() {
@@ -318,7 +318,7 @@ pub fn load_session_npu(_model: &Path, _provider: &str) -> anyhow::Result<Loaded
 }
 
 #[cfg(feature = "npu")]
-/// Whether the kernel exposes an Intel NPU (`intel_vpu` registers `accel` nodes).
+/// Whether the kernel exposes an Intel NPU (an `accel` node bound to `intel_vpu`).
 pub(crate) fn npu_present() -> bool {
     shared::accel::probe().total > 0
 }

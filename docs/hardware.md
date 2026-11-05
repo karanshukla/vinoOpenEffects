@@ -8,7 +8,7 @@ snapshot, not a promise.
 
 | Provider | How it is selected | What happens |
 |---|---|---|
-| **NPU** (Intel, OpenVINO EP) | `auto` when `/dev/accel/accel*` exists and the loaded onnxruntime has the OpenVINO provider; or `npu` explicitly | Every model runs on it, and Auto light only runs here |
+| **NPU** (Intel, OpenVINO EP) | `auto` when a `/dev/accel/accel*` node bound to `intel_vpu` exists (AMD `amdxdna` nodes are ignored) and the loaded onnxruntime has the OpenVINO provider; or `npu` explicitly | Every model runs on it, and Auto light only runs here |
 | **GPU** (OpenVINO EP) | `VINOOPENEFFECTS_EP=gpu` only; `auto` never picks it, and the saved setting takes `auto`, `cpu` or `npu` | Same models as the NPU path. Not measured yet |
 | **CPU** | `auto` without a usable NPU, or `cpu` explicitly | Every model except Auto light, which stays off |
 

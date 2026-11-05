@@ -107,7 +107,7 @@ pub fn npu_hardware_verdict(nodes: crate::accel::Nodes) -> Check {
             "inference",
             "npu",
             Status::Info,
-            "no Intel NPU hardware detected (/dev/accel has no accel nodes; models run on CPU)",
+            "no Intel NPU hardware detected (no intel_vpu node in /dev/accel; models run on CPU)",
             None,
         )
     }
