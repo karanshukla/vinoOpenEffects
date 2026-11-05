@@ -61,6 +61,12 @@ command that talks to the daemon starts it). Check
 `pw-cli ls Node | grep vinoopeneffects`. After upgrading from `openeffects` the
 device name changed, so re-select it in each app.
 
+The virtual camera is a PipeWire node, not a `/dev/video` device, so only apps
+that read cameras through PipeWire see it. Chromium-based browsers (Chrome,
+Edge, Brave) only do with their PipeWire camera flag on: if it's off, enable
+"PipeWire Camera support" in `chrome://flags` and restart the browser. Apps
+that only open V4L2 devices can't see it at all.
+
 **The camera LED stays off and apps show black.** The real camera opens only when
 a consumer starts streaming. If it never does, `doctor`'s `camera: selected`
 line and the journal say which device failed and why.

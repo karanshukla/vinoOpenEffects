@@ -1,21 +1,23 @@
 # Install
 
-vinoOpenEffects installs from source only for now. There are no `.deb`, `.rpm`
+vinoOpenEffects installs with one command from a release (prebuilt x86_64
+binaries, no Rust toolchain) or from a checkout. There are no `.deb`, `.rpm`
 or Arch packages: shipping the right onnxruntime (CPU or OpenVINO) per machine
-is easier from a checkout, and packaging will come back later.
+is easier from an install script, and packaging will come back later.
 
 ## Requirements
 
 - Wayland, PipeWire and WirePlumber
-- Rust 1.92 or newer, and the GStreamer, GTK 4, libadwaita and PipeWire
-  development packages ([development.md](development.md#environments) lists
-  them for Fedora and Debian/Ubuntu)
+- From a checkout only: Rust 1.92 or newer, and the GStreamer, GTK 4,
+  libadwaita and PipeWire development packages
+  ([development.md](development.md#environments) lists them for Fedora and
+  Debian/Ubuntu)
 - For the GUI: libadwaita 1.7 or newer, and `gtk4paintablesink` for the live
   preview (`gstreamer1-plugin-gtk4` on Fedora, `gstreamer1.0-gtk4` on
   Debian/Ubuntu, `gst-plugin-gtk4` on Arch). Use `--no-gui` without them.
 - [ovfetch](https://github.com/karanshukla/ovfetch) 0.5.0 or newer
   (`cargo install ovfetch --locked`), on every machine: it is the only source of
-  onnxruntime
+  onnxruntime. The release installer fetches its own if it isn't on `PATH`
 - Python 3.11 or newer and `curl`, for fetching the models (or `--no-models`)
 - x86_64 has been tested; nothing else has
 
@@ -28,13 +30,13 @@ nobody has reported back yet, not that something is known to break.
 | Distro | Status | Notes |
 |---|---|---|
 | Fedora 42+ (Workstation, KDE) | Primary target | |
-| Fedora Atomic (Silverblue, Kinoite, Bazzite) | Not tried | Build in a toolbox, see below |
+| Fedora Atomic (Silverblue, Kinoite, Bazzite) | Not tried | Release install into `~/.local`; the GUI may need layered packages, see below |
 | Ubuntu 26.04, Debian 13 | CI builds and tests on Ubuntu 26.04 | NPU users need the `render` group ([hardware.md](hardware.md)) |
 | Ubuntu 24.04, Debian 12 | Daemon and CLI only | libadwaita 1.5/1.2 is too old for the GUI: `--no-gui`. Their packaged Rust is older than 1.92, so use rustup |
 | Arch | Not tried | `gst-plugin-pipewire` isn't pulled in by `pipewire` |
 | openSUSE Tumbleweed | Not tried | The GUI preview's sink is in `gstreamer-plugins-rs` |
 | openSUSE Leap 15 | Unsupported | GTK, libadwaita and Python are too old |
-| openSUSE Aeon / MicroOS | Not tried | Build in a distrobox, as for Fedora Atomic |
+| openSUSE Aeon / MicroOS | Not tried | As for Fedora Atomic, with a Tumbleweed distrobox for builds |
 
 `vinoopeneffects-ctl doctor` names the missing package for your distro.
 
@@ -42,8 +44,25 @@ nobody has reported back yet, not that something is known to break.
 
 `/usr` is read-only, so the default `~/.local` install is the one to use
 (`/usr/local` also works: on Fedora Atomic it is `/var/usrlocal`). Nothing here
-needs root or a kernel module. The build needs the `-devel` packages and Rust,
-which belong in a toolbox (or distrobox) rather than layered on the host:
+needs root or a kernel module. The [release install](#from-a-release) needs
+no build tools, so run it on the host:
+
+```bash
+curl -fsSL https://github.com/karanshukla/vinoOpenEffects/releases/latest/download/install.sh | bash
+```
+
+The daemon and CLI need GStreamer with `-plugins-good` and
+`pipewire-gstreamer`. The GUI also needs `gtk4`, `libadwaita` and
+`gstreamer1-plugin-gtk4`; Silverblue ships most of these, Kinoite and Bazzite
+may not ship the GTK ones. Run `vinoopeneffects-ctl doctor`: it names what to
+`rpm-ostree install` (then reboot), or install with `bash -s -- --no-gui` and
+skip the GUI. If `vinoopeneffects-ctl status` says the daemon isn't
+activatable, run `systemctl --user daemon-reload` or log in again.
+
+The release binaries need libraries at least as new as Ubuntu 26.04's. If the
+host's are older, or you're installing from a checkout, build in a toolbox (or
+distrobox): the build needs the `-devel` packages and Rust, which belong there
+rather than layered on the host:
 
 ```bash
 toolbox create --release "$(rpm -E %fedora)" vinoopeneffects
@@ -56,16 +75,11 @@ scripts/install.sh
 The toolbox shares your home directory and session bus, so the install lands in
 `~/.local` and the daemon runs on the host. Create the toolbox with the host's
 release so the binaries link against the same library versions the host has.
-The host then needs the runtime side: GStreamer with `-plugins-good`,
-`pipewire-gstreamer`, and for the GUI `gtk4`, `libadwaita` and
-`gstreamer1-plugin-gtk4`. Silverblue ships most of these; Kinoite and Bazzite
-may not ship the GTK ones. Run `vinoopeneffects-ctl doctor` on the host: it
-names what to `rpm-ostree install`. If `vinoopeneffects-ctl status` on the host
-says the daemon isn't activatable, run `systemctl --user daemon-reload` there or
-log in again.
+The host still needs the runtime packages above; run `doctor` on the host, not
+in the toolbox.
 
-On openSUSE Aeon and MicroOS the same applies with a Tumbleweed distrobox and
-`transactional-update pkg install` for anything the host lacks.
+On openSUSE Aeon and MicroOS the same applies with a Tumbleweed distrobox for
+builds and `transactional-update pkg install` for anything the host lacks.
 
 ## Installing
 
