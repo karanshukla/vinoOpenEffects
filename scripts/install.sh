@@ -67,8 +67,9 @@ fi
 prebuilt=0
 [ -x "$repo_root/bin/vinoopeneffects-daemon" ] && prebuilt=1
 
-# The release binaries are built on ubuntu-26.04 (release.yml), so they need its glibc.
-glibc_min=2.43
+# The newest glibc symbol version the release binaries reference (v4: GLIBC_2.39).
+# Check with: objdump -T bin/* | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+glibc_min=2.39
 if [ "$prebuilt" = 1 ]; then
     # Before getconf, which passes on NixOS, where without nix-ld they fail with a bare ENOENT.
     interp="$(LC_ALL=C head -c 4096 "$repo_root/bin/vinoopeneffects-daemon" |
