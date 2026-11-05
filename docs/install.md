@@ -95,8 +95,9 @@ the tarball unless it's listed there and matches, and runs the release's own
 those binaries instead of building, so there's no Rust toolchain to install. Options go after
 `bash -s --` (`--no-gui`, `--no-models`, `vN` for a specific release; with `sudo`,
 `--prefix /usr/local`). The binaries are built on Ubuntu 26.04, the same image as CI, so they
-need its glibc and GTK/libadwaita/GStreamer/PipeWire or newer; on an older distro, build from
-source. Releases before v4 have no binaries.
+need its glibc and GTK/libadwaita/GStreamer/PipeWire or newer; on an older distro (SteamOS,
+Endless OS 6), build from source or in a toolbox. They also need the standard dynamic linker,
+so on NixOS enable `programs.nix-ld`. Releases before v4 have no binaries.
 
 ovfetch is still what installs onnxruntime. Without ovfetch 0.5.0 or newer on `PATH`, the
 script downloads ovfetch's own release binary into `lib/vinoopeneffects/bin/`, checked against
