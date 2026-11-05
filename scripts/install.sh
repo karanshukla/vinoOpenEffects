@@ -67,6 +67,22 @@ fi
 prebuilt=0
 [ -x "$repo_root/bin/vinoopeneffects-daemon" ] && prebuilt=1
 
+# The newest glibc symbol version the release binaries reference (v4: GLIBC_2.39).
+# Check with: objdump -T bin/* | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+glibc_min=2.39
+if [ "$prebuilt" = 1 ]; then
+    # Before getconf, which passes on NixOS, where without nix-ld they fail with a bare ENOENT.
+    interp="$(LC_ALL=C head -c 4096 "$repo_root/bin/vinoopeneffects-daemon" |
+        grep -ao '/lib[0-9]*/ld-linux[-a-z0-9_]*\.so\.[0-9]*' | head -1 || true)"
+    [ -z "$interp" ] || [ -e "$interp" ] ||
+        die "$interp is missing: this needs a standard dynamic linker (on NixOS, enable programs.nix-ld)"
+    glibc="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}')" || true
+    if [ -z "$glibc" ] || [ "$(printf '%s\n%s\n' "$glibc_min" "$glibc" | sort -V | head -1)" != "$glibc_min" ]; then
+        die "the release binaries need glibc $glibc_min or newer and this has ${glibc:-none}: build from source," \
+            "in a toolbox or distrobox on image-based distros (docs/install.md#fedora-atomic-and-other-image-based-distros)"
+    fi
+fi
+
 # Without a usable ovfetch, its release binary, checked against this pin (the
 # same as vinoWhisper's ovfetch_release.json): no cargo needed.
 ovfetch_pin_version=0.6.0

@@ -7,6 +7,8 @@ pub struct DistroInfo {
     pub id_like: String,
     /// Booted from an rpm-ostree image (`/run/ostree-booted`): Silverblue, Kinoite, Bazzite.
     pub ostree: bool,
+    /// `/` is mounted read-only (SteamOS, Vanilla OS): the package manager can't change it.
+    pub read_only: bool,
 }
 
 pub fn detect_distro(os_release: &str) -> DistroInfo {
@@ -24,6 +26,7 @@ pub fn detect_distro(os_release: &str) -> DistroInfo {
         id,
         id_like,
         ostree: false,
+        read_only: false,
     }
 }
 
@@ -94,24 +97,29 @@ pub fn package_remedy(plugin: &GstPlugin, distro: Option<&DistroInfo>) -> (Strin
     let Some(d) = distro else {
         return generic_remedy(plugin);
     };
+    // Endless, Vanilla OS and SteamOS look like Debian or Arch, but apt and pacman can't change the image.
+    let image = d.ostree || d.read_only;
     match family(d) {
         Family::Fedora if d.ostree => (
             plugin.fedora.into(),
             format!("rpm-ostree install {}, then reboot", plugin.fedora),
         ),
+        Family::Fedora if image => image_remedy(plugin.fedora),
         Family::Fedora => (
             plugin.fedora.into(),
             format!("sudo dnf install {}", plugin.fedora),
         ),
+        Family::Debian if image => image_remedy(plugin.debian),
         Family::Debian => (
             plugin.debian.into(),
             format!("sudo apt install {}", plugin.debian),
         ),
+        Family::Arch if image => image_remedy(plugin.arch),
         Family::Arch => (
             plugin.arch.into(),
             format!("sudo pacman -S {}", plugin.arch),
         ),
-        Family::Suse if transactional_suse(d) => (
+        Family::Suse if transactional_suse(d) || image => (
             plugin.suse.into(),
             format!(
                 "sudo transactional-update pkg install {}, then reboot",
@@ -124,6 +132,10 @@ pub fn package_remedy(plugin: &GstPlugin, distro: Option<&DistroInfo>) -> (Strin
         ),
         Family::Other => generic_remedy(plugin),
     }
+}
+
+fn image_remedy(pkg: &str) -> (String, String) {
+    (pkg.into(), format!("add {pkg} with your image's tool"))
 }
 
 fn generic_remedy(plugin: &GstPlugin) -> (String, String) {
@@ -262,8 +274,25 @@ pub fn probe_distro() -> Option<DistroInfo> {
         .ok()
         .map(|c| DistroInfo {
             ostree: Path::new("/run/ostree-booted").exists(),
+            read_only: std::fs::read_to_string("/proc/self/mounts")
+                .is_ok_and(|m| root_read_only(&m)),
             ..detect_distro(&c)
         })
+}
+
+/// Whether `/proc/self/mounts` has `/` mounted `ro` (the last `/` entry is the one in effect).
+fn root_read_only(mounts: &str) -> bool {
+    mounts
+        .lines()
+        .rev()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace().skip(1);
+            (fields.next() == Some("/"))
+                .then(|| fields.nth(1))
+                .flatten()
+        })
+        .next()
+        .is_some_and(|opts| opts.split(',').any(|o| o == "ro"))
 }
 
 pub fn probe_gtk_versions() -> (Option<String>, Option<String>) {
@@ -308,6 +337,7 @@ mod tests {
             id: "fedora".into(),
             id_like: "".into(),
             ostree: false,
+            read_only: false,
         };
         let c = gtk4_sink_verdict(false, Some(&distro));
         assert_eq!(c.status, Status::Fail);
@@ -324,6 +354,7 @@ mod tests {
             id: "ubuntu".into(),
             id_like: "debian".into(),
             ostree: false,
+            read_only: false,
         };
         let c = gtk4_sink_verdict(false, Some(&distro));
         assert_eq!(c.status, Status::Fail);
@@ -336,6 +367,45 @@ mod tests {
             ostree,
             ..detect_distro(os_release)
         }
+    }
+
+    #[test]
+    fn image_based_debian_and_arch_get_no_apt_or_pacman() {
+        let endless = distro("ID=endless\nID_LIKE=debian\n", true);
+        let (pkg, cmd) = package_remedy(&PIPEWIRE_SRC, Some(&endless));
+        assert_eq!(pkg, "gstreamer1.0-pipewire");
+        assert_eq!(cmd, "add gstreamer1.0-pipewire with your image's tool");
+        let steamos = DistroInfo {
+            read_only: true,
+            ..distro("ID=steamos\nID_LIKE=arch\n", false)
+        };
+        assert_eq!(
+            package_remedy(&GTK4_SINK, Some(&steamos)).1,
+            "add gst-plugin-gtk4 with your image's tool"
+        );
+        let suse = DistroInfo {
+            read_only: true,
+            ..distro(
+                "ID=\"opensuse-slowroll\"\nID_LIKE=\"suse opensuse\"\n",
+                false,
+            )
+        };
+        assert!(
+            package_remedy(&GTK4_SINK, Some(&suse))
+                .1
+                .starts_with("sudo transactional-update pkg install")
+        );
+    }
+
+    #[test]
+    fn root_read_only_reads_the_last_root_mount() {
+        assert!(root_read_only(
+            "/dev/sda3 / btrfs rw,relatime 0 0\n/dev/sda3 / btrfs ro,relatime 0 0\n"
+        ));
+        assert!(!root_read_only(
+            "/dev/vda1 / ext4 rw,relatime 0 0\nproc /proc proc ro,nosuid 0 0\n"
+        ));
+        assert!(!root_read_only(""));
     }
 
     #[test]

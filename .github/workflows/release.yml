@@ -56,6 +56,8 @@ jobs:
   # The tree as the release's scripts expect it, with bin/ beside scripts/:
   # scripts/install.sh installs those instead of building.
   binaries:
+    # glibc_min in scripts/install.sh is the newest GLIBC_ symbol these binaries
+    # reference, not this image's glibc: re-check it when this image changes.
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
