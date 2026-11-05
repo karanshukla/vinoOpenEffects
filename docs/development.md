@@ -155,9 +155,9 @@ scripts/release.sh                                         # from an up-to-date 
 section. Pushing the tag runs `.github/workflows/release.yml`, which checks the
 tag is on `main` and has a changelog section, then publishes a GitHub Release
 with that section as its notes, a source bundle
-(`vinoopeneffects-vN-source.tar.gz`) and `SHA256SUMS`. There are no prebuilt
-binaries or packages yet, since vinoOpenEffects installs from source
-([install.md](install.md)). The bundle has no `.git`, so it carries a `VERSION`
+(`vinoopeneffects-vN-source.tar.gz`), the prebuilt binaries
+(`vinoopeneffects-x86_64-linux.tar.gz`, built on CI's Ubuntu 26.04 image),
+`install.sh` and `SHA256SUMS` ([install.md](install.md#from-a-release)). The bundle has no `.git`, so it carries a `VERSION`
 file that `buildinfo/version.rs` reads. The crate version in `Cargo.toml` is not
 the release number and doesn't change with it. The version the GUI's About
 dialog and `vinoopeneffects-ctl --version` show comes from
