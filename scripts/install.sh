@@ -167,6 +167,9 @@ done
 # for Updates runs (with VINO_UPDATE_TAG set).
 if [ "$prebuilt" = 1 ] && [ -f "$repo_root/install.sh" ]; then
     install -m 0755 "$repo_root/install.sh" "$bindir/vinoopeneffects-upgrade"
+elif [ "$prebuilt" = 0 ]; then
+    # A source build over a release install: the marker would still say release.
+    rm -f "$bindir/vinoopeneffects-upgrade"
 fi
 
 install -d "$datadir/dbus-1/interfaces"
