@@ -9,7 +9,12 @@ use crate::constants::APP_ID;
 /// which the other Rust apps use directly. Not a dependency here because the
 /// crate needs Rust 1.95 and this workspace builds on 1.92; keep it in step.
 const SITE: (&str, &str) = ("vinopilot.ca", "https://vinopilot.ca/");
-const OTHER_APPS: [(&str, &str, &str); 6] = [
+const OTHER_APPS: [(&str, &str, &str); 7] = [
+    (
+        "vinoPilot",
+        "One app to install and update the rest",
+        "https://vinopilot.ca/apps/#vinopilot",
+    ),
     (
         "vinoWhisper",
         "Live captions and voice typing",
