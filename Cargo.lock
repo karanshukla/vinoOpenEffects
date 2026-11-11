@@ -2487,6 +2487,7 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "serde",
+ "tempfile",
  "tokio",
  "toml",
  "tracing",

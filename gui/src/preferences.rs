@@ -1,17 +1,21 @@
 //! The Preferences dialog (`AdwPreferencesDialog`): camera selection, the
-//! virtual-camera node readout, and the bundled-model library. Built once and
-//! re-presented from the primary menu.
+//! virtual-camera node readout, and the bundled-model library with a way to
+//! delete the downloaded models. Built once and re-presented from the primary
+//! menu.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use adw::glib;
+use std::path::PathBuf;
+
 use adw::prelude::*;
+use adw::{gio, glib};
 
 use crate::config::GuiConfig;
 use crate::constants::BUNDLED_MODELS;
 use crate::dbus_client::{CmdTx, GuiCommand};
+use crate::models::{self, UserPaths};
 use crate::widgets::pref_group;
 
 /// Rows the state-sync layer updates when the daemon's state changes.
@@ -147,6 +151,7 @@ pub(crate) fn build_page(
         models_group.add(&row);
         model_rows.insert(*id, row);
     }
+    models_group.add(&delete_models_row());
     page.add(&models_group);
 
     let startup = pref_group("Startup", "Control when the vinoOpenEffects daemon runs");
@@ -209,4 +214,157 @@ pub(crate) fn build_page(
             inference_handler,
         },
     )
+}
+
+/// "Downloaded Models": what's on disk in the user's home, and Delete…, which
+/// confirms in an `AdwAlertDialog` like Check for Updates does.
+fn delete_models_row() -> adw::ActionRow {
+    let row = adw::ActionRow::builder().title("Downloaded Models").build();
+    let button = gtk::Button::builder()
+        .label("Delete…")
+        .valign(gtk::Align::Center)
+        .css_classes(["destructive-action"])
+        .build();
+    row.add_suffix(&button);
+
+    let refresh = {
+        let row = row.clone();
+        let button = button.clone();
+        move || refresh_delete_row(&row, &button)
+    };
+    refresh();
+    // The installer or a terminal can change the directory while the dialog is closed.
+    row.connect_map({
+        let refresh = refresh.clone();
+        move |_| refresh()
+    });
+
+    button.connect_clicked(move |button| {
+        let Some(paths) = UserPaths::current() else {
+            return;
+        };
+        let system = models::system_dirs_with_models(&paths);
+        let upgrade = crate::update::upgrade_command().is_some();
+        let dialog = adw::AlertDialog::new(
+            Some("Delete Models?"),
+            Some(&confirm_body(&system, upgrade)),
+        );
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("delete", "Delete");
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        let target = button.clone();
+        let refresh = refresh.clone();
+        dialog.connect_response(Some("delete"), move |_, _| {
+            run_delete(&target, paths.clone(), refresh.clone());
+        });
+        dialog.present(Some(button));
+    });
+    row
+}
+
+fn refresh_delete_row(row: &adw::ActionRow, button: &gtk::Button) {
+    let paths = UserPaths::current();
+    let (subtitle, can_delete) = match &paths {
+        Some(paths) if paths.has_models() => {
+            (on_disk(paths.size(), &models::tilde(&paths.models)), true)
+        }
+        _ => (
+            "None downloaded. Models installed system-wide stay where they are".to_string(),
+            false,
+        ),
+    };
+    row.set_subtitle(&subtitle);
+    button.set_sensitive(can_delete);
+}
+
+fn on_disk(bytes: u64, dir: &str) -> String {
+    format!("{} in {dir}", glib::format_size(bytes))
+}
+
+/// What Delete does, in the confirm dialog.
+fn confirm_body(system: &[PathBuf], upgrade: bool) -> String {
+    let fetch = if upgrade {
+        "run vinoopeneffects-upgrade"
+    } else {
+        "run scripts/fetch-models.sh from your checkout"
+    };
+    let effect = if system.is_empty() {
+        format!(
+            "Portrait blur, background replace, Center Stage and gesture reactions stop \
+             working until you download the models again: {fetch}."
+        )
+    } else {
+        let dirs: Vec<String> = system.iter().map(|d| d.display().to_string()).collect();
+        format!(
+            "The models installed system-wide in {} stay, and the effects use those. \
+             To download your own copy again, {fetch}.",
+            dirs.join(" and ")
+        )
+    };
+    format!(
+        "{effect} The effects daemon restarts, so the camera pauses for a moment. \
+         Your backgrounds and settings are kept."
+    )
+}
+
+fn run_delete(button: &gtk::Button, paths: UserPaths, refresh: impl Fn() + 'static) {
+    button.set_sensitive(false);
+    let button = button.clone();
+    glib::spawn_future_local(async move {
+        let result = gio::spawn_blocking(move || models::delete(&paths))
+            .await
+            .unwrap_or_else(|_| Err("The delete stopped before it finished.".into()));
+        refresh();
+        match result {
+            Ok(()) => {
+                if let Some(prefs) = button.ancestor(adw::PreferencesDialog::static_type()) {
+                    prefs
+                        .downcast::<adw::PreferencesDialog>()
+                        .expect("ancestor of that type")
+                        .add_toast(adw::Toast::new("Models deleted"));
+                }
+            }
+            Err(why) => {
+                let alert = adw::AlertDialog::new(Some("Couldn't Delete Models"), Some(&why));
+                alert.add_response("close", "Close");
+                alert.set_close_response("close");
+                alert.present(Some(&button));
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod delete_tests {
+    use super::*;
+
+    #[test]
+    fn confirm_says_how_to_get_them_back() {
+        let release = confirm_body(&[], true);
+        assert!(release.contains("vinoopeneffects-upgrade"));
+        assert!(release.contains("stop working"));
+        assert!(release.contains("backgrounds and settings are kept"));
+        let checkout = confirm_body(&[], false);
+        assert!(checkout.contains("scripts/fetch-models.sh"));
+    }
+
+    #[test]
+    fn confirm_says_system_models_stay() {
+        let body = confirm_body(
+            &[PathBuf::from("/usr/local/share/vinoopeneffects/models")],
+            true,
+        );
+        assert!(body.contains("/usr/local/share/vinoopeneffects/models stay"));
+        assert!(!body.contains("stop working"));
+    }
+
+    #[test]
+    fn on_disk_shows_size_and_place() {
+        assert_eq!(
+            on_disk(8_400_000, "~/.local/share/vinoopeneffects/models"),
+            "8.4\u{a0}MB in ~/.local/share/vinoopeneffects/models"
+        );
+    }
 }

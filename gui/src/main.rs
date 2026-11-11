@@ -5,6 +5,7 @@ mod app;
 mod config;
 mod constants;
 mod dbus_client;
+mod models;
 mod pages;
 mod preferences;
 mod preview;
