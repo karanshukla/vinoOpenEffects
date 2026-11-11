@@ -107,6 +107,8 @@ Every release install also leaves `install.sh` as `vinoopeneffects-upgrade`. **C
 Updates** in the window's menu asks GitHub for the newest release (only when you click it) and
 offers to run it; `vinoopeneffects-upgrade` (or `vinoopeneffects-upgrade v5`) does the same from
 a terminal. It restarts the daemon if it was running, so the camera pauses for a moment.
+`vinoopeneffects-upgrade --uninstall` removes a release install again (see
+[Uninstalling](#uninstalling)).
 
 ### From a checkout
 
@@ -141,7 +143,7 @@ It builds a release and installs:
 | systemd user unit | `share/systemd/user/vinoopeneffects-daemon.service` |
 | Desktop entry and icons (GUI) | `share/applications/`, `share/icons/hicolor/` |
 | onnxruntime | `lib/vinoopeneffects/ort/`, installed by `ovfetch` (see below) |
-| Models | `~/.local/share/vinoopeneffects/models/`, or `share/vinoopeneffects/models/` under the prefix when run as root; sha256-verified against the manifests, ones already present and verified are skipped |
+| Models | `~/.local/share/vinoopeneffects/models/`, or `share/vinoopeneffects/models/` under the prefix when run as root; sha256-verified against the manifests, ones already present and verified are skipped. Uninstalling deletes them |
 
 **ovfetch decides the runtime.** `install.sh` stops before building if ovfetch
 is missing or older than 0.5.0, then runs `ovfetch install` before installing
@@ -210,18 +212,44 @@ install `xdg-desktop-portal-gtk`.
 - `~/.local/share/vinoopeneffects/models/`: the models (the daemon also looks in
   `share/vinoopeneffects/models` under its own prefix, `/usr/local/share` and
   `/usr/share`)
+- `~/.cache/vinoopeneffects/openvino/`: the NPU compile cache, so later starts
+  skip compiling the models
+
+**Downloaded Models** in Preferences shows how much the models and the compile
+cache take and deletes both. It stops the daemon first (D-Bus starts it again
+when the window reconnects, so the camera pauses for a moment) and leaves the
+backgrounds and settings alone. It never touches a system-wide install under
+`/usr/local` or `/usr`; when there is one, the effects keep using it. To get the
+models back, run `vinoopeneffects-upgrade` (a release install) or
+`scripts/fetch-models.sh` (a checkout).
 
 ## Uninstalling
+
+A release install:
+
+```bash
+vinoopeneffects-upgrade --uninstall                 # from ~/.local
+sudo vinoopeneffects-upgrade --uninstall --prefix /usr/local
+vinoopeneffects-upgrade --uninstall --purge         # also config and backgrounds
+```
+
+That downloads the release's tarball, checks it like an install does, and runs
+its `scripts/uninstall.sh`, which is the only uninstaller: a release install
+keeps nothing but `vinoopeneffects-upgrade` on disk. From a checkout, run the
+script directly:
 
 ```bash
 scripts/uninstall.sh                        # from ~/.local
 sudo scripts/uninstall.sh --prefix /usr/local
-scripts/uninstall.sh --purge                # also models, config and backgrounds
+scripts/uninstall.sh --purge                # also config and backgrounds
 ```
 
 It disables and stops the user unit first, then removes everything
 `install.sh` put under the prefix, including the onnxruntime (and, as root, the
-models under the prefix).
+models under the prefix). It also deletes your models
+(`~/.local/share/vinoopeneffects/models`) and the compile cache
+(`~/.cache/vinoopeneffects`); under `sudo`, the sudo user's. Settings
+(`~/.config/vinoopeneffects`) and backgrounds stay unless you pass `--purge`.
 
 ## Upgrading from openeffects
 

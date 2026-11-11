@@ -6,7 +6,11 @@
 # Options go after `bash -s --`, e.g. `| bash -s -- --no-gui`:
 #
 #   vN          that release instead of the newest
-#   anything else is passed to the release's scripts/install.sh:
+#   --uninstall run the release's scripts/uninstall.sh instead, which removes
+#               the install, your models and the compile cache (add --purge
+#               for settings and backgrounds too)
+#   -h, --help  this text
+#   anything else is passed to the release's scripts/install.sh (or uninstall.sh):
 #               --no-gui, --no-models, --prefix DIR (with sudo for /usr/local)
 #
 # It downloads the release's SHA256SUMS and binaries tarball, refuses the
@@ -16,7 +20,8 @@
 # systemd files, onnxruntime through ovfetch (fetching ovfetch's release
 # binary, hash-pinned, if it isn't installed) and the models, then restarts
 # the daemon if it was running. Nothing is built. It also leaves this script
-# as vinoopeneffects-upgrade, which the GUI's Check for Updates runs.
+# as vinoopeneffects-upgrade, which the GUI's Check for Updates runs, and
+# `vinoopeneffects-upgrade --uninstall` removes it all again.
 #
 # From a checkout, scripts/install.sh builds from source instead.
 
@@ -28,11 +33,13 @@ REPO="karanshukla/vinoOpenEffects"
 ASSET="vinoopeneffects-x86_64-linux.tar.gz"
 
 main() {
-    local tag="${VINO_UPDATE_TAG:-}" arg
+    local tag="${VINO_UPDATE_TAG:-}" script=install.sh arg
     local args=()
     for arg in "$@"; do
         case "$arg" in
             v[0-9]*) tag="$arg" ;;
+            --uninstall) script=uninstall.sh ;;
+            -h | --help) sed -n '2,26p' "${BASH_SOURCE[0]:-$0}" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
             *) args+=("$arg") ;;
         esac
     done
@@ -40,7 +47,7 @@ main() {
         echo "✗ Not a release tag: '$tag'" >&2
         exit 2
     fi
-    if [ "$(uname -m)" != x86_64 ]; then
+    if [ "$script" = install.sh ] && [ "$(uname -m)" != x86_64 ]; then
         echo "✗ The release binaries are x86_64 only; build from a checkout on $(uname -m)" >&2
         exit 1
     fi
@@ -85,8 +92,9 @@ main() {
     echo "checksum verified"
 
     tar -xzf "$work/$ASSET" -C "$work" --no-same-owner
-    [ -x "$work/vinoopeneffects/scripts/install.sh" ] || { echo "✗ $ASSET has no scripts/install.sh" >&2; exit 1; }
-    "$work/vinoopeneffects/scripts/install.sh" "${args[@]}" </dev/null
+    # The uninstaller comes from the release too: nothing but this script is kept on disk.
+    [ -x "$work/vinoopeneffects/scripts/$script" ] || { echo "✗ $ASSET has no scripts/$script" >&2; exit 1; }
+    "$work/vinoopeneffects/scripts/$script" "${args[@]}" </dev/null
 }
 
 main "$@"

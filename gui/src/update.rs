@@ -62,7 +62,7 @@ fn latest_tag(json: &str) -> Option<String> {
     valid.then(|| tag.to_string())
 }
 
-fn upgrade_command() -> Option<PathBuf> {
+pub(crate) fn upgrade_command() -> Option<PathBuf> {
     let path = dirs::executable_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join(".local/bin")))?
         .join("vinoopeneffects-upgrade");

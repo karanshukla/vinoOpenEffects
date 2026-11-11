@@ -193,9 +193,30 @@ jobs:
           # An upgrade over the same prefix keeps or reinstalls onnxruntime and must succeed.
           scripts/install.sh --prefix "$prefix" --no-models
           test -x "$prefix/bin/vinoopeneffects-daemon"
-          scripts/uninstall.sh --prefix "$prefix"
+          # Remove it the way a release install does, with `vinoopeneffects-upgrade --uninstall`
+          # fetching the release's uninstall.sh (here from a file:// fake release), with a
+          # scratch HOME holding models, a compile cache, a background and settings.
+          home="$RUNNER_TEMP/home"
+          share="$home/.local/share/vinoopeneffects"
+          mkdir -p "$share/models/yunet" "$share/backgrounds" \
+              "$home/.cache/vinoopeneffects/openvino" "$home/.config/vinoopeneffects"
+          touch "$share/models/yunet/model.onnx" "$share/backgrounds/mine.jpg" \
+              "$home/.cache/vinoopeneffects/openvino/blob" "$home/.config/vinoopeneffects/state.toml"
+          rel="$RUNNER_TEMP/release"
+          mkdir -p "$rel/vinoopeneffects"
+          git archive HEAD scripts | tar -x -C "$rel/vinoopeneffects"
+          tar -czf "$rel/vinoopeneffects-x86_64-linux.tar.gz" -C "$rel" vinoopeneffects
+          (cd "$rel" && sha256sum vinoopeneffects-x86_64-linux.tar.gz >SHA256SUMS)
+          env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME HOME="$home" \
+            VINOOPENEFFECTS_RELEASE_BASE="file://$rel" bash install.sh --uninstall --prefix "$prefix"
           leftover="$(find "$prefix" -type f)"
           test -z "$leftover" || { echo "left behind:"; echo "$leftover"; exit 1; }
+          test ! -e "$share/models" || { echo "models left behind"; exit 1; }
+          test ! -e "$home/.cache/vinoopeneffects" || { echo "compile cache left behind"; exit 1; }
+          test -f "$share/backgrounds/mine.jpg" && test -f "$home/.config/vinoopeneffects/state.toml"
+          env -u XDG_DATA_HOME -u XDG_CACHE_HOME -u XDG_CONFIG_HOME HOME="$home" \
+            scripts/uninstall.sh --prefix "$prefix" --purge
+          test ! -e "$share" && test ! -e "$home/.config/vinoopeneffects"
 
   release-bundle:
     runs-on: ubuntu-26.04

@@ -83,8 +83,8 @@ systemctl --user stop vinoopeneffects-daemon
 RUST_LOG=debug cargo run -p vinoopeneffects-daemon -- --start
 ```
 
-`scripts/uninstall.sh` removes the install (`--purge` also removes models,
-config and backgrounds).
+`scripts/uninstall.sh` removes the install, your models and the compile cache
+(`--purge` also removes config and backgrounds).
 
 ## Tests
 
@@ -118,7 +118,7 @@ change is meant to alter the output, update the digest and say so in the PR.
 | `coverage` | `cargo llvm-cov` (without `daemon/src/bench.rs`): a summary in the job output, `lcov.info` as the `lcov` artifact, and an upload to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), which comments on each PR; fails below 57% line coverage (a Coveralls outage never fails it) |
 | `build-npu` | `cargo check` of the daemon with and without default features |
 | `msrv` | `cargo +1.92 test --workspace --no-run`: builds the tests and dev-dependencies too, not only the binaries |
-| `install` | `shellcheck scripts/*.sh`; `install.sh` must refuse an unwritable prefix before building; then `install.sh --no-models` into a scratch prefix, a check of every installed file, a second install over it (the upgrade path), and `uninstall.sh`, which must leave nothing behind |
+| `install` | `shellcheck scripts/*.sh`; `install.sh` must refuse an unwritable prefix before building; then `install.sh --no-models` into a scratch prefix, a check of every installed file, a second install over it (the upgrade path), and `install.sh --uninstall` from a `file://` fake release, which must leave nothing behind in the prefix and delete the models and compile cache from a scratch `HOME` while keeping its backgrounds and settings (then `--purge` must remove those) |
 | `release-bundle` | Builds the same `git archive` bundle as `release.yml` with a made-up tag, builds the CLI from it with `--locked`, and checks `--version` reports the tag from the bundle's `VERSION` file |
 | `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, sources) |
 | `fedora` | `cargo build` and `cargo test --locked` in a `fedora:latest` container with Fedora's own rustc. Not required, since a new Fedora release can break it on its own |
