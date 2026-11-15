@@ -3,104 +3,82 @@ use std::path::{Path, PathBuf};
 use super::types::{Check, Status};
 use crate::config::AppState;
 
+const TOP_LEVEL_FLAGS: &[&str] = &["bypass"];
+
+const SECTION_KEYS: &[(&str, &[&str])] = &[("inference", &["provider"]), ("camera", &["selected"])];
+
+const EFFECT_KEYS: &[(&str, &[&str])] = &[
+    ("center_stage", &["enabled", "zoom", "mode", "crop"]),
+    ("portrait_blur", &["enabled", "strength"]),
+    ("bg_replace", &["enabled", "background"]),
+    (
+        "studio_light",
+        &[
+            "enabled",
+            "intensity",
+            "brightness",
+            "contrast",
+            "bg_brightness",
+            "auto_light",
+            "auto_strength",
+        ],
+    ),
+    ("reactions", &["enabled"]),
+];
+
+/// Keys in `state.toml` the daemon would ignore, as dotted paths.
+/// `tests::every_key_the_daemon_writes_is_known` keeps the tables in step with `AppState`.
 pub fn find_unknown_keys(value: &toml::Value) -> Vec<String> {
     let mut unknown = Vec::new();
     let toml::Value::Table(top) = value else {
         return unknown;
     };
-
-    for (k, v) in top {
-        match k.as_str() {
-            "bypass" => {}
-            "inference" => {
-                if let toml::Value::Table(inf) = v {
-                    for ik in inf.keys() {
-                        if ik != "provider" {
-                            unknown.push(format!("inference.{ik}"));
-                        }
-                    }
-                }
-            }
-            "camera" => {
-                if let toml::Value::Table(cam) = v {
-                    for ck in cam.keys() {
-                        if ck != "selected" {
-                            unknown.push(format!("camera.{ck}"));
-                        }
-                    }
-                }
-            }
-            "effects" => {
-                if let toml::Value::Table(effs) = v {
-                    for (ek, ev) in effs {
-                        match ek.as_str() {
-                            "center_stage" => {
-                                if let toml::Value::Table(t) = ev {
-                                    for key in t.keys() {
-                                        if !matches!(
-                                            key.as_str(),
-                                            "enabled" | "zoom" | "mode" | "crop"
-                                        ) {
-                                            unknown.push(format!("effects.center_stage.{key}"));
-                                        }
-                                    }
-                                }
-                            }
-                            "portrait_blur" => {
-                                if let toml::Value::Table(t) = ev {
-                                    for key in t.keys() {
-                                        if !matches!(key.as_str(), "enabled" | "strength") {
-                                            unknown.push(format!("effects.portrait_blur.{key}"));
-                                        }
-                                    }
-                                }
-                            }
-                            "bg_replace" => {
-                                if let toml::Value::Table(t) = ev {
-                                    for key in t.keys() {
-                                        if !matches!(key.as_str(), "enabled" | "background") {
-                                            unknown.push(format!("effects.bg_replace.{key}"));
-                                        }
-                                    }
-                                }
-                            }
-                            "studio_light" => {
-                                if let toml::Value::Table(t) = ev {
-                                    for key in t.keys() {
-                                        if !matches!(
-                                            key.as_str(),
-                                            "enabled"
-                                                | "intensity"
-                                                | "brightness"
-                                                | "contrast"
-                                                | "bg_brightness"
-                                                | "auto_light"
-                                                | "auto_strength"
-                                        ) {
-                                            unknown.push(format!("effects.studio_light.{key}"));
-                                        }
-                                    }
-                                }
-                            }
-                            "reactions" => {
-                                if let toml::Value::Table(t) = ev {
-                                    for key in t.keys() {
-                                        if key != "enabled" {
-                                            unknown.push(format!("effects.reactions.{key}"));
-                                        }
-                                    }
-                                }
-                            }
-                            other => unknown.push(format!("effects.{other}")),
-                        }
-                    }
-                }
-            }
-            other => unknown.push(other.to_string()),
+    for (key, section) in top {
+        if TOP_LEVEL_FLAGS.contains(&key.as_str()) {
+            continue;
+        }
+        if let Some(known) = known_keys(SECTION_KEYS, key) {
+            push_unknown_keys(&mut unknown, key, section, known);
+        } else if key == "effects" {
+            push_unknown_effect_keys(&mut unknown, section);
+        } else {
+            unknown.push(key.clone());
         }
     }
-
     unknown
+}
+
+fn known_keys(
+    table: &[(&str, &'static [&'static str])],
+    name: &str,
+) -> Option<&'static [&'static str]> {
+    table
+        .iter()
+        .find_map(|(section, keys)| (*section == name).then_some(*keys))
+}
+
+fn push_unknown_effect_keys(unknown: &mut Vec<String>, effects: &toml::Value) {
+    let toml::Value::Table(effects) = effects else {
+        return;
+    };
+    for (effect, params) in effects {
+        match known_keys(EFFECT_KEYS, effect) {
+            Some(known) => push_unknown_keys(unknown, &format!("effects.{effect}"), params, known),
+            None => unknown.push(format!("effects.{effect}")),
+        }
+    }
+}
+
+fn push_unknown_keys(unknown: &mut Vec<String>, path: &str, section: &toml::Value, known: &[&str]) {
+    let toml::Value::Table(section) = section else {
+        return;
+    };
+    unknown.extend(
+        section
+            .keys()
+            .filter(|key| !known.contains(&key.as_str()))
+            .map(|key| format!("{path}.{key}")),
+    );
 }
 
 pub fn config_verdict(path: &Path, content: Result<&str, &std::io::Error>) -> Check {
