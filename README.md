@@ -9,9 +9,9 @@
 [![License](https://img.shields.io/badge/license-GPL--3.0-blue)](https://github.com/karanshukla/vinoOpenEffects/blob/main/LICENSE)
 [![Language](https://img.shields.io/badge/language-Rust-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
-Webcam effects for the Linux desktop, run locally on your NPU or CPU. vinoOpenEffects
-publishes a **vinoOpenEffects Virtual Camera** in PipeWire that any app can pick
-(browsers, Zoom, OBS), with:
+Webcam effects for the Linux desktop, run locally on your NPU or CPU. It publishes
+a **vinoOpenEffects Virtual Camera** in PipeWire that any app can pick (browsers,
+Zoom, OBS).
 
 - **Portrait blur** and **Background replace** (a colour or your own image)
 - **Studio Light**: lifts you, not the room behind you
@@ -19,25 +19,38 @@ publishes a **vinoOpenEffects Virtual Camera** in PipeWire that any app can pick
 - **Reactions**: emoji bursts from a button, the CLI, or a thumbs up, thumbs
   down, heart or wave
 
-Nothing leaves the machine. The real camera only opens while an app is watching
-the virtual one. Wayland only. Forked from OpenEffects in order to add NPU support for better performance, lower battery drain and improved effects.
+Nothing leaves the machine, and the real camera only opens while an app is
+watching the virtual one. Forked from OpenEffects to add NPU support, for better
+performance, lower battery drain and improved effects.
+
+## Requirements
+
+- Wayland, PipeWire and WirePlumber (x86_64 is the only architecture tested)
+- libadwaita 1.7 or newer for the window (`--no-gui` skips it)
+- Python 3.11 or newer and `curl`, to fetch the models
+
+The full list, per distro, is in [docs/install.md](docs/install.md).
 
 ## Quick start
 
-The latest release's prebuilt binaries, into `~/.local` with no root
-(requirements are in [docs/install.md](docs/install.md)):
+The latest release's prebuilt binaries, into `~/.local` with no root:
 
 ```bash
 curl -fsSL https://github.com/karanshukla/vinoOpenEffects/releases/latest/download/install.sh | bash
 ```
 
-Add `-s -- --no-gui` after `bash` for the daemon and CLI only. From a checkout,
-`scripts/install.sh` builds from source instead. To upgrade, use **Check for
-Updates** in the window's menu, or run `vinoopeneffects-upgrade`.
-
-It fetches the sha256-verified models and has
+The installer fetches the sha256-verified models and has
 [ovfetch](https://github.com/karanshukla/ovfetch) install the onnxruntime that
-fits your NPU (or CPU). Then open **vinoOpenEffects** from your app menu, or:
+fits your NPU (or CPU). Add `-s -- --no-gui` after `bash` for the daemon and CLI
+only. From a checkout, `scripts/install.sh` builds from source instead. There
+are no distro packages yet.
+
+To upgrade, use **Check for Updates** in the window's menu or run
+`vinoopeneffects-upgrade`.
+
+## Usage
+
+Open **vinoOpenEffects** from your app menu, or use the CLI:
 
 ```bash
 vinoopeneffects-ctl start                          # advertise the virtual camera
@@ -45,17 +58,14 @@ vinoopeneffects-ctl portrait-blur --on --strength 70
 vinoopeneffects-ctl doctor                         # check the whole install
 ```
 
-and pick "vinoOpenEffects Virtual Camera" in your video app.
-
-There are no distro packages for now; source is the supported install.
-[docs/install.md](docs/install.md) covers options, uninstalling and upgrading
-from `openeffects`.
+Then pick "vinoOpenEffects Virtual Camera" in your video app.
+[docs/cli.md](docs/cli.md) has every command.
 
 ## Documentation
 
 | | |
 |---|---|
-| [docs/install.md](docs/install.md) | Requirements, install options, files, uninstalling, upgrading from `openeffects` |
+| [docs/install.md](docs/install.md) | Requirements, distros, install options, files, uninstalling, upgrading from `openeffects` |
 | [docs/cli.md](docs/cli.md) | Every `vinoopeneffects-ctl` command, Waybar and keybind examples |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Starting from `doctor`'s output |
 | [docs/hardware.md](docs/hardware.md) | NPU, GPU and CPU behaviour, measured latency, camera quirks |

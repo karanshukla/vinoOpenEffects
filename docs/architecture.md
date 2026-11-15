@@ -25,10 +25,10 @@ PipeWire, or if either client depends on `core` or the daemon instead of
 
 | Crate | What it holds |
 |---|---|
-| `shared` | D-Bus names and value helpers, `state.toml` config, legacy-path migration, the `doctor` probes |
+| `shared` | D-Bus names and value helpers, `state.toml` config, legacy-path migration, the `doctor` probes, the sha256 file check `core` and the doctor both use |
 | `core` | Pure logic: inference (`ort`), gesture classification, every effect. No media stack, so it tests without GStreamer |
 | `daemon` | The D-Bus server, the GStreamer capture pipeline, the `oe_effects` element and the PipeWire provide node |
-| `cli`, `gui` | The two clients. `gui/build.rs` generates its D-Bus proxies from `data/dbus/*.xml` with `zbus_xmlgen` |
+| `cli`, `gui` | The two clients. `gui/build.rs` generates its D-Bus proxies from `data/dbus/*.xml` with `zbus_xmlgen`. The CLI is `args` (the clap definitions), `daemon` and `effects` (the commands), `bus` (proxies) and `values` (parsing and printing D-Bus values) |
 | `tests/integration` | A `videotestsrc` pipeline test, and D-Bus round trips that need a running daemon (`#[ignore]`d) |
 
 The daemon starts on demand. The D-Bus activation file and the systemd user unit
