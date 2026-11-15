@@ -46,8 +46,8 @@ pub fn find_model(id: &str) -> Option<ResolvedModel> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::manifest::sha256_hex;
     use super::*;
+    use shared::checksum::sha256_hex;
     use tempfile::TempDir;
 
     const MANIFEST_TOML: &str = r#"

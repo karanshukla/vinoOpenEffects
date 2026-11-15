@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 use super::types::{Check, Status};
 
@@ -137,25 +136,6 @@ pub fn model_verdict(
     }
 }
 
-pub fn sha256_file(path: &Path) -> std::io::Result<String> {
-    use std::io::Read;
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
-}
-
 pub fn model_search_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(h) = home {
@@ -206,7 +186,7 @@ pub fn probe_model(
         for variant in &manifest.model.variants {
             let file_path = model_dir.join(&variant.file);
             if file_path.exists() {
-                let actual_sha = sha256_file(&file_path).ok();
+                let actual_sha = crate::checksum::sha256_hex(&file_path).ok();
                 let matches = actual_sha.map(|s| s.eq_ignore_ascii_case(&variant.sha256));
                 return (true, true, matches, Some(file_path));
             }

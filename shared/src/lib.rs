@@ -1,4 +1,5 @@
 pub mod accel;
+pub mod checksum;
 pub mod config;
 pub mod dbus;
 pub mod doctor;
