@@ -2529,8 +2529,6 @@ dependencies = [
  "tracing-subscriber",
  "vinoopeneffects-shared",
  "zbus",
- "zbus_xml",
- "zbus_xmlgen",
  "zvariant",
 ]
 
