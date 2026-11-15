@@ -4,11 +4,8 @@
 //! (segment / detect) that takes an RGBA frame buffer and returns the decoded
 //! result. Sessions run on the GStreamer streaming thread, so the wrappers are
 //! `Send` (ORT's `Session` is `Send + Sync`) and are held behind a `Mutex` in
-//! the effects element.
-//!
-//! Both models run on the CPU execution provider — the only EP shipped by the
-//! `download-binaries` feature — which is more than fast enough for the bundled
-//! 256×256 selfie-segmentation (≈0.5 MB) and 640×640 YuNet (≈0.2 MB) models.
+//! the effects element. Which execution provider a session gets is decided in
+//! [`super::load_session`].
 
 use anyhow::{Context, Result};
 use ort::session::Session;

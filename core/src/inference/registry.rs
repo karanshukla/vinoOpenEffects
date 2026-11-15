@@ -10,7 +10,7 @@ pub struct ResolvedModel {
     pub model_path: PathBuf,
 }
 
-/// Model search directories, in PRD §9.3 priority order: per-user data dir,
+/// Model search directories, in priority order: per-user data dir,
 /// then the system-wide ones.
 pub fn search_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -46,8 +46,8 @@ pub fn find_model(id: &str) -> Option<ResolvedModel> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::manifest::sha256_hex;
     use super::*;
+    use shared::checksum::sha256_hex;
     use tempfile::TempDir;
 
     const MANIFEST_TOML: &str = r#"

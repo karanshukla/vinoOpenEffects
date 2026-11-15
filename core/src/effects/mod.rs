@@ -178,12 +178,8 @@ impl Effects {
             .ensure(&mut self.engine, self.frame, img, w, h, w * 4, is_roi);
         self.mask.refine(img, w, h);
         let Some(lut) = self.mask.lut(w, h) else {
-            // No mask yet: the selfie model is still loading (every camera
-            // session starts a fresh engine, and the first NPU run took
-            // 365 ms with a cold cache) or the first segmentation failed.
-            // Blur and replace treat the whole frame as background meanwhile,
-            // rather than send it untouched. A model that failed to load for
-            // good turns them off instead, as logged.
+            // No mask yet. `golden_tests::blur_hides_the_frame_until_the_mask_exists` and
+            // `a_failed_model_still_turns_blur_off` pin both sides; docs/architecture.md says why.
             if self.settings.needs_composite() && !self.engine.selfie_failed() {
                 self.hidden.clear();
                 self.hidden.resize(w * h, 0);

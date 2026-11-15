@@ -90,7 +90,7 @@ pub struct CenterStageState {
     pub zoom: String,
     /// "single" | "group"
     pub mode: String,
-    #[serde(default = "phase1_default_crop")]
+    #[serde(default = "default_crop")]
     pub crop: CropConfig,
 }
 impl Default for CenterStageState {
@@ -99,7 +99,7 @@ impl Default for CenterStageState {
             enabled: false,
             zoom: "normal".into(),
             mode: "single".into(),
-            crop: phase1_default_crop(),
+            crop: default_crop(),
         }
     }
 }
@@ -177,7 +177,7 @@ pub struct CropConfig {
     pub right: u32,
 }
 
-fn phase1_default_crop() -> CropConfig {
+fn default_crop() -> CropConfig {
     CropConfig {
         top: 12,
         bottom: 12,

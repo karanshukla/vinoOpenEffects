@@ -1,9 +1,13 @@
 use shared::{
     config::AppState,
-    dbus::{VariantMap, bool_value, i32_value, str_value, u32_value},
+    dbus::{
+        VariantMap, bool_value, i32_value, str_value, u32_value, value_as_bool, value_as_i32,
+        value_as_string, value_as_u32,
+    },
 };
+use zvariant::OwnedValue;
 
-use crate::pipeline::probe::PIPEWIRE_NODE_NAME;
+use crate::pipeline::{PipelineEvent, probe::PIPEWIRE_NODE_NAME};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaemonStatus {
@@ -36,6 +40,15 @@ impl DaemonStatus {
             Self::Starting | Self::Running | Self::Idle | Self::Error
         )
     }
+}
+
+/// What the D-Bus side has to announce after a pipeline event was applied.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Announcements {
+    /// The new status, only when it differs from the one before the event.
+    pub status: Option<DaemonStatus>,
+    /// The active provider and its detail, on every inference change.
+    pub inference: Option<(String, Option<String>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +106,46 @@ impl DaemonState {
         oe_core::inference::effective_ep(self.app.inference.provider.as_str())
     }
 
+    /// Folds one pipeline event into the state and says what changed for listeners.
+    pub fn apply_pipeline_event(&mut self, event: PipelineEvent) -> Announcements {
+        let status_before = self.status;
+        let mut announcements = Announcements::default();
+        match event {
+            PipelineEvent::Advertised { sink } => {
+                self.status = DaemonStatus::Idle;
+                self.output_sink = sink;
+                self.last_error = None;
+            }
+            PipelineEvent::Started { sink } => {
+                self.status = DaemonStatus::Running;
+                self.output_sink = sink;
+                self.last_error = None;
+            }
+            PipelineEvent::Idle => self.status = DaemonStatus::Idle,
+            PipelineEvent::Stopped => {
+                self.status = DaemonStatus::Stopped;
+                self.virtual_camera_verified = None;
+            }
+            PipelineEvent::Error(error) => {
+                self.status = DaemonStatus::Error;
+                self.last_error = Some(error);
+            }
+            PipelineEvent::VirtualCameraVerified { node_name, found } => {
+                self.virtual_camera_name = node_name;
+                self.virtual_camera_verified = Some(found);
+            }
+            PipelineEvent::InferenceChanged { active, detail } => {
+                self.inference_active = active.clone();
+                self.inference_detail = detail.clone();
+                announcements.inference = Some((active, detail));
+            }
+        }
+        if self.status != status_before {
+            announcements.status = Some(self.status);
+        }
+        announcements
+    }
+
     pub fn inference_degraded(&self) -> bool {
         oe_core::inference::degraded(&self.requested_inference_provider(), &self.inference_active)
     }
@@ -146,97 +199,58 @@ impl DaemonState {
     }
 
     pub fn effect_params(&self, id: &str) -> Option<VariantMap> {
-        let mut values = VariantMap::new();
-        match id {
+        let effects = &self.app.effects;
+        let params: Vec<(&str, OwnedValue)> = match id {
             "center_stage" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.center_stage.enabled),
-                );
-                values.insert(
-                    "zoom".into(),
-                    str_value(&self.app.effects.center_stage.zoom),
-                );
-                values.insert(
-                    "mode".into(),
-                    str_value(&self.app.effects.center_stage.mode),
-                );
-                values.insert(
-                    "crop_top".into(),
-                    u32_value(self.app.effects.center_stage.crop.top),
-                );
-                values.insert(
-                    "crop_bottom".into(),
-                    u32_value(self.app.effects.center_stage.crop.bottom),
-                );
-                values.insert(
-                    "crop_left".into(),
-                    u32_value(self.app.effects.center_stage.crop.left),
-                );
-                values.insert(
-                    "crop_right".into(),
-                    u32_value(self.app.effects.center_stage.crop.right),
-                );
+                let center_stage = &effects.center_stage;
+                vec![
+                    ("enabled", bool_value(center_stage.enabled)),
+                    ("zoom", str_value(&center_stage.zoom)),
+                    ("mode", str_value(&center_stage.mode)),
+                    ("crop_top", u32_value(center_stage.crop.top)),
+                    ("crop_bottom", u32_value(center_stage.crop.bottom)),
+                    ("crop_left", u32_value(center_stage.crop.left)),
+                    ("crop_right", u32_value(center_stage.crop.right)),
+                ]
             }
-            "portrait_blur" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.portrait_blur.enabled),
-                );
-                values.insert(
-                    "strength".into(),
-                    u32_value(self.app.effects.portrait_blur.strength as u32),
-                );
-            }
-            "bg_replace" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.bg_replace.enabled),
-                );
-                values.insert(
-                    "background".into(),
-                    str_value(&self.app.effects.bg_replace.background),
-                );
-            }
+            "portrait_blur" => vec![
+                ("enabled", bool_value(effects.portrait_blur.enabled)),
+                (
+                    "strength",
+                    u32_value(u32::from(effects.portrait_blur.strength)),
+                ),
+            ],
+            "bg_replace" => vec![
+                ("enabled", bool_value(effects.bg_replace.enabled)),
+                ("background", str_value(&effects.bg_replace.background)),
+            ],
             "studio_light" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.studio_light.enabled),
-                );
-                values.insert(
-                    "intensity".into(),
-                    u32_value(self.app.effects.studio_light.intensity as u32),
-                );
-                values.insert(
-                    "brightness".into(),
-                    i32_value(self.app.effects.studio_light.brightness as i32),
-                );
-                values.insert(
-                    "contrast".into(),
-                    u32_value(self.app.effects.studio_light.contrast as u32),
-                );
-                values.insert(
-                    "bg_brightness".into(),
-                    i32_value(self.app.effects.studio_light.bg_brightness as i32),
-                );
-                values.insert(
-                    "auto_light".into(),
-                    bool_value(self.app.effects.studio_light.auto_light),
-                );
-                values.insert(
-                    "auto_strength".into(),
-                    u32_value(self.app.effects.studio_light.auto_strength as u32),
-                );
+                let studio_light = &effects.studio_light;
+                vec![
+                    ("enabled", bool_value(studio_light.enabled)),
+                    ("intensity", u32_value(u32::from(studio_light.intensity))),
+                    ("brightness", i32_value(i32::from(studio_light.brightness))),
+                    ("contrast", u32_value(u32::from(studio_light.contrast))),
+                    (
+                        "bg_brightness",
+                        i32_value(i32::from(studio_light.bg_brightness)),
+                    ),
+                    ("auto_light", bool_value(studio_light.auto_light)),
+                    (
+                        "auto_strength",
+                        u32_value(u32::from(studio_light.auto_strength)),
+                    ),
+                ]
             }
-            "reactions" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.reactions.enabled),
-                );
-            }
+            "reactions" => vec![("enabled", bool_value(effects.reactions.enabled))],
             _ => return None,
-        }
-        Some(values)
+        };
+        Some(
+            params
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
     }
 
     pub fn all_effect_state(&self) -> VariantMap {
@@ -272,96 +286,85 @@ impl DaemonState {
         true
     }
 
-    pub fn set_param(&mut self, id: &str, key: &str, value: &zvariant::OwnedValue) -> bool {
+    /// False for an unknown `id.key` or a value of the wrong type; out-of-range numbers are
+    /// clamped, as `tests::set_param_clamps_out_of_range_values` pins.
+    pub fn set_param(&mut self, id: &str, key: &str, value: &OwnedValue) -> bool {
+        let effects = &mut self.app.effects;
         match (id, key) {
             ("center_stage", "zoom") => {
-                if let Some(v) = shared::dbus::value_as_string(value) {
-                    self.app.effects.center_stage.zoom = v;
-                    return true;
-                }
+                store(&mut effects.center_stage.zoom, value_as_string(value))
             }
             ("center_stage", "mode") => {
-                if let Some(v) = shared::dbus::value_as_string(value) {
-                    self.app.effects.center_stage.mode = v;
-                    return true;
-                }
+                store(&mut effects.center_stage.mode, value_as_string(value))
             }
             ("center_stage", "crop_top") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.top = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.top, crop_inset(value))
             }
             ("center_stage", "crop_bottom") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.bottom = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.bottom, crop_inset(value))
             }
             ("center_stage", "crop_left") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.left = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.left, crop_inset(value))
             }
             ("center_stage", "crop_right") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.right = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.right, crop_inset(value))
             }
             ("portrait_blur", "strength") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.portrait_blur.strength = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.portrait_blur.strength, percent(value))
             }
             ("bg_replace", "background") => {
-                if let Some(v) = shared::dbus::value_as_string(value) {
-                    self.app.effects.bg_replace.background = v;
-                    return true;
-                }
+                store(&mut effects.bg_replace.background, value_as_string(value))
             }
             ("studio_light", "intensity") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.studio_light.intensity = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.studio_light.intensity, percent(value))
             }
             ("studio_light", "brightness") => {
-                if let Some(v) = shared::dbus::value_as_i32(value) {
-                    self.app.effects.studio_light.brightness = v.clamp(-100, 100) as i8;
-                    return true;
-                }
+                store(&mut effects.studio_light.brightness, signed_percent(value))
             }
             ("studio_light", "contrast") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.studio_light.contrast = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.studio_light.contrast, percent(value))
             }
             ("studio_light", "auto_light") => {
-                if let Some(v) = shared::dbus::value_as_bool(value) {
-                    self.app.effects.studio_light.auto_light = v;
-                    return true;
-                }
+                store(&mut effects.studio_light.auto_light, value_as_bool(value))
             }
             ("studio_light", "auto_strength") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.studio_light.auto_strength = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.studio_light.auto_strength, percent(value))
             }
-            ("studio_light", "bg_brightness") => {
-                if let Some(v) = shared::dbus::value_as_i32(value) {
-                    self.app.effects.studio_light.bg_brightness = v.clamp(-100, 100) as i8;
-                    return true;
-                }
-            }
-            _ => {}
+            ("studio_light", "bg_brightness") => store(
+                &mut effects.studio_light.bg_brightness,
+                signed_percent(value),
+            ),
+            _ => false,
         }
-        false
     }
+}
+
+const MAX_CROP_INSET_PX: u32 = 512;
+const MAX_PERCENT: u32 = 100;
+const SIGNED_PERCENT: std::ops::RangeInclusive<i32> = -100..=100;
+
+/// Overwrites `slot` when the D-Bus value had the expected type; says whether it did.
+fn store<T>(slot: &mut T, parsed: Option<T>) -> bool {
+    match parsed {
+        Some(parsed) => {
+            *slot = parsed;
+            true
+        }
+        None => false,
+    }
+}
+
+fn crop_inset(value: &OwnedValue) -> Option<u32> {
+    value_as_u32(value).map(|inset| inset.min(MAX_CROP_INSET_PX))
+}
+
+fn percent(value: &OwnedValue) -> Option<u8> {
+    value_as_u32(value).map(|percent| percent.min(MAX_PERCENT) as u8)
+}
+
+fn signed_percent(value: &OwnedValue) -> Option<i8> {
+    value_as_i32(value)
+        .map(|percent| percent.clamp(*SIGNED_PERCENT.start(), *SIGNED_PERCENT.end()) as i8)
 }
 
 #[cfg(test)]
@@ -371,10 +374,75 @@ mod tests {
         value_as_string, value_as_u32,
     };
 
-    use super::{DaemonState, DaemonStatus};
+    use super::{Announcements, DaemonState, DaemonStatus};
+    use crate::pipeline::PipelineEvent;
 
     fn default_state() -> DaemonState {
         DaemonState::new(shared::config::AppState::default(), false)
+    }
+
+    #[test]
+    fn a_started_pipeline_is_running_and_clears_the_last_error() {
+        let mut state = default_state();
+        state.apply_pipeline_event(PipelineEvent::Error("camera busy".into()));
+        assert_eq!(state.last_error.as_deref(), Some("camera busy"));
+
+        let announced = state.apply_pipeline_event(PipelineEvent::Started {
+            sink: "pipewire".into(),
+        });
+        assert_eq!(announced.status, Some(DaemonStatus::Running));
+        assert_eq!(state.status, DaemonStatus::Running);
+        assert_eq!(state.output_sink, "pipewire");
+        assert_eq!(state.last_error, None);
+    }
+
+    #[test]
+    fn a_status_is_announced_only_when_it_changes() {
+        let mut state = default_state();
+        let first = state.apply_pipeline_event(PipelineEvent::Idle);
+        assert_eq!(first.status, Some(DaemonStatus::Idle));
+        let repeat = state.apply_pipeline_event(PipelineEvent::Idle);
+        assert_eq!(repeat, Announcements::default());
+        let advertised = state.apply_pipeline_event(PipelineEvent::Advertised {
+            sink: "pipewire".into(),
+        });
+        assert_eq!(advertised.status, None);
+    }
+
+    #[test]
+    fn stopping_forgets_whether_the_virtual_camera_was_verified() {
+        let mut state = default_state();
+        let verified = state.apply_pipeline_event(PipelineEvent::VirtualCameraVerified {
+            node_name: "node".into(),
+            found: true,
+        });
+        assert_eq!(verified, Announcements::default());
+        assert_eq!(state.virtual_camera_name, "node");
+        assert_eq!(state.virtual_camera_verified, Some(true));
+
+        state.apply_pipeline_event(PipelineEvent::Started {
+            sink: "pipewire".into(),
+        });
+        let stopped = state.apply_pipeline_event(PipelineEvent::Stopped);
+        assert_eq!(stopped.status, Some(DaemonStatus::Stopped));
+        assert_eq!(state.virtual_camera_verified, None);
+    }
+
+    #[test]
+    fn an_inference_change_is_announced_even_when_nothing_differs() {
+        let mut state = default_state();
+        let event = || PipelineEvent::InferenceChanged {
+            active: "cpu".into(),
+            detail: Some("no NPU".into()),
+        };
+        let expected = Announcements {
+            status: None,
+            inference: Some(("cpu".into(), Some("no NPU".into()))),
+        };
+        assert_eq!(state.apply_pipeline_event(event()), expected);
+        assert_eq!(state.apply_pipeline_event(event()), expected);
+        assert_eq!(state.inference_active, "cpu");
+        assert_eq!(state.inference_detail.as_deref(), Some("no NPU"));
     }
 
     #[test]

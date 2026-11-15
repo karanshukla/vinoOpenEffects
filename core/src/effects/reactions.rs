@@ -5,7 +5,7 @@
 //! horizontal position, rise speed, size, tilt, and a gentle side-to-side sway.
 //! Bursts are triggered either manually (a GUI button / the `TriggerReaction`
 //! D-Bus method) or, when the reactions effect is enabled, automatically by the
-//! hand-gesture pipeline (Phase B).
+//! hand-gesture pipeline.
 //!
 //! The system is owned by [`Effects`](super::Effects), advanced and composited
 //! once per frame from `Effects::process` after every other effect so the

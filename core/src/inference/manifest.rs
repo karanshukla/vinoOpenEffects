@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
+use shared::checksum::sha256_hex;
 
-/// Model manifest, per PRD §9.1: describes a model's I/O tensors, supported
+/// Model manifest: describes a model's I/O tensors, supported
 /// execution providers, and downloadable variants (with sha256 for
 /// verification by `scripts/fetch-models.sh` and [`ModelManifest::resolve_variant`]).
 #[derive(Debug, Clone, Deserialize)]
@@ -26,8 +26,7 @@ pub struct ModelSection {
     pub output: HashMap<String, TensorSpec>,
     pub execution: ExecutionSpec,
     pub variants: Vec<VariantSpec>,
-    /// Upstream download URL, used by `scripts/fetch-models.sh`. Not part of
-    /// the strict PRD §9.1 schema, but harmless extra metadata.
+    /// Upstream download URL, used by `scripts/fetch-models.sh`.
     #[serde(default)]
     pub source: Option<SourceSpec>,
 }
@@ -91,26 +90,6 @@ fn is_plain_file_name(file: &str) -> bool {
         (parts.next(), parts.next()),
         (Some(std::path::Component::Normal(_)), None)
     )
-}
-
-pub(crate) fn sha256_hex(path: &Path) -> std::io::Result<String> {
-    use std::io::Read;
-
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 8192];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
 }
 
 #[cfg(test)]
