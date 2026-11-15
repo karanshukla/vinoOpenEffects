@@ -221,6 +221,69 @@ mod tests {
     }
 
     #[test]
+    fn every_key_the_daemon_writes_is_known() {
+        let written = toml::to_string_pretty(&AppState::default()).unwrap();
+        let value: toml::Value = toml::from_str(&written).unwrap();
+        assert_eq!(find_unknown_keys(&value), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_unknown_key_is_reported_with_its_full_path() {
+        let toml = r#"
+            bypass = true
+            extra = 1
+            [inference]
+            provider = "auto"
+            threads = 4
+            [camera]
+            selected = ""
+            fps = 30
+            [effects.center_stage]
+            zoom = "tight"
+            pan = 1
+            [effects.center_stage.crop]
+            anything = 1
+            [effects.portrait_blur]
+            strength = 5
+            radius = 1
+            [effects.bg_replace]
+            background = ""
+            colour = 1
+            [effects.studio_light]
+            auto_light = true
+            warmth = 1
+            [effects.reactions]
+            enabled = true
+            size = 1
+            [effects.sparkle]
+            enabled = true
+        "#;
+        let value: toml::Value = toml::from_str(toml).unwrap();
+        let mut unknown = find_unknown_keys(&value);
+        unknown.sort();
+        assert_eq!(
+            unknown,
+            [
+                "camera.fps",
+                "effects.bg_replace.colour",
+                "effects.center_stage.pan",
+                "effects.portrait_blur.radius",
+                "effects.reactions.size",
+                "effects.sparkle",
+                "effects.studio_light.warmth",
+                "extra",
+                "inference.threads",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_known_key_holding_the_wrong_shape_is_left_to_the_parser() {
+        let value: toml::Value = toml::from_str("effects = 1\ninference = \"npu\"").unwrap();
+        assert_eq!(find_unknown_keys(&value), Vec::<String>::new());
+    }
+
+    #[test]
     fn test_config_verdict_syntax_error() {
         let toml = "this is not valid toml = = =";
         let c = config_verdict(Path::new("/config/state.toml"), Ok(toml));
