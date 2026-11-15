@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use shared::checksum::sha256_hex;
 
-/// Model manifest, per PRD §9.1: describes a model's I/O tensors, supported
+/// Model manifest: describes a model's I/O tensors, supported
 /// execution providers, and downloadable variants (with sha256 for
 /// verification by `scripts/fetch-models.sh` and [`ModelManifest::resolve_variant`]).
 #[derive(Debug, Clone, Deserialize)]
@@ -26,8 +26,7 @@ pub struct ModelSection {
     pub output: HashMap<String, TensorSpec>,
     pub execution: ExecutionSpec,
     pub variants: Vec<VariantSpec>,
-    /// Upstream download URL, used by `scripts/fetch-models.sh`. Not part of
-    /// the strict PRD §9.1 schema, but harmless extra metadata.
+    /// Upstream download URL, used by `scripts/fetch-models.sh`.
     #[serde(default)]
     pub source: Option<SourceSpec>,
 }
