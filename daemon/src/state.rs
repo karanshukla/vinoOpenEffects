@@ -7,7 +7,7 @@ use shared::{
 };
 use zvariant::OwnedValue;
 
-use crate::pipeline::probe::PIPEWIRE_NODE_NAME;
+use crate::pipeline::{PipelineEvent, probe::PIPEWIRE_NODE_NAME};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DaemonStatus {
@@ -40,6 +40,15 @@ impl DaemonStatus {
             Self::Starting | Self::Running | Self::Idle | Self::Error
         )
     }
+}
+
+/// What the D-Bus side has to announce after a pipeline event was applied.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Announcements {
+    /// The new status, only when it differs from the one before the event.
+    pub status: Option<DaemonStatus>,
+    /// The active provider and its detail, on every inference change.
+    pub inference: Option<(String, Option<String>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +104,46 @@ impl DaemonState {
 
     pub fn requested_inference_provider(&self) -> String {
         oe_core::inference::effective_ep(self.app.inference.provider.as_str())
+    }
+
+    /// Folds one pipeline event into the state and says what changed for listeners.
+    pub fn apply_pipeline_event(&mut self, event: PipelineEvent) -> Announcements {
+        let status_before = self.status;
+        let mut announcements = Announcements::default();
+        match event {
+            PipelineEvent::Advertised { sink } => {
+                self.status = DaemonStatus::Idle;
+                self.output_sink = sink;
+                self.last_error = None;
+            }
+            PipelineEvent::Started { sink } => {
+                self.status = DaemonStatus::Running;
+                self.output_sink = sink;
+                self.last_error = None;
+            }
+            PipelineEvent::Idle => self.status = DaemonStatus::Idle,
+            PipelineEvent::Stopped => {
+                self.status = DaemonStatus::Stopped;
+                self.virtual_camera_verified = None;
+            }
+            PipelineEvent::Error(error) => {
+                self.status = DaemonStatus::Error;
+                self.last_error = Some(error);
+            }
+            PipelineEvent::VirtualCameraVerified { node_name, found } => {
+                self.virtual_camera_name = node_name;
+                self.virtual_camera_verified = Some(found);
+            }
+            PipelineEvent::InferenceChanged { active, detail } => {
+                self.inference_active = active.clone();
+                self.inference_detail = detail.clone();
+                announcements.inference = Some((active, detail));
+            }
+        }
+        if self.status != status_before {
+            announcements.status = Some(self.status);
+        }
+        announcements
     }
 
     pub fn inference_degraded(&self) -> bool {
@@ -325,10 +374,75 @@ mod tests {
         value_as_string, value_as_u32,
     };
 
-    use super::{DaemonState, DaemonStatus};
+    use super::{Announcements, DaemonState, DaemonStatus};
+    use crate::pipeline::PipelineEvent;
 
     fn default_state() -> DaemonState {
         DaemonState::new(shared::config::AppState::default(), false)
+    }
+
+    #[test]
+    fn a_started_pipeline_is_running_and_clears_the_last_error() {
+        let mut state = default_state();
+        state.apply_pipeline_event(PipelineEvent::Error("camera busy".into()));
+        assert_eq!(state.last_error.as_deref(), Some("camera busy"));
+
+        let announced = state.apply_pipeline_event(PipelineEvent::Started {
+            sink: "pipewire".into(),
+        });
+        assert_eq!(announced.status, Some(DaemonStatus::Running));
+        assert_eq!(state.status, DaemonStatus::Running);
+        assert_eq!(state.output_sink, "pipewire");
+        assert_eq!(state.last_error, None);
+    }
+
+    #[test]
+    fn a_status_is_announced_only_when_it_changes() {
+        let mut state = default_state();
+        let first = state.apply_pipeline_event(PipelineEvent::Idle);
+        assert_eq!(first.status, Some(DaemonStatus::Idle));
+        let repeat = state.apply_pipeline_event(PipelineEvent::Idle);
+        assert_eq!(repeat, Announcements::default());
+        let advertised = state.apply_pipeline_event(PipelineEvent::Advertised {
+            sink: "pipewire".into(),
+        });
+        assert_eq!(advertised.status, None);
+    }
+
+    #[test]
+    fn stopping_forgets_whether_the_virtual_camera_was_verified() {
+        let mut state = default_state();
+        let verified = state.apply_pipeline_event(PipelineEvent::VirtualCameraVerified {
+            node_name: "node".into(),
+            found: true,
+        });
+        assert_eq!(verified, Announcements::default());
+        assert_eq!(state.virtual_camera_name, "node");
+        assert_eq!(state.virtual_camera_verified, Some(true));
+
+        state.apply_pipeline_event(PipelineEvent::Started {
+            sink: "pipewire".into(),
+        });
+        let stopped = state.apply_pipeline_event(PipelineEvent::Stopped);
+        assert_eq!(stopped.status, Some(DaemonStatus::Stopped));
+        assert_eq!(state.virtual_camera_verified, None);
+    }
+
+    #[test]
+    fn an_inference_change_is_announced_even_when_nothing_differs() {
+        let mut state = default_state();
+        let event = || PipelineEvent::InferenceChanged {
+            active: "cpu".into(),
+            detail: Some("no NPU".into()),
+        };
+        let expected = Announcements {
+            status: None,
+            inference: Some(("cpu".into(), Some("no NPU".into()))),
+        };
+        assert_eq!(state.apply_pipeline_event(event()), expected);
+        assert_eq!(state.apply_pipeline_event(event()), expected);
+        assert_eq!(state.inference_active, "cpu");
+        assert_eq!(state.inference_detail.as_deref(), Some("no NPU"));
     }
 
     #[test]

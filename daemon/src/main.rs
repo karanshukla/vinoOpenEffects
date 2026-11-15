@@ -122,66 +122,27 @@ async fn run() -> anyhow::Result<()> {
     let event_state = Arc::clone(&state);
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
-            let mut status_change = None;
-            let mut inference_change = None;
-            {
+            let (announcements, degraded) = {
                 let mut state = event_state.write().await;
-                let old_status = state.status;
-                match event {
-                    PipelineEvent::Advertised { sink } => {
-                        state.status = DaemonStatus::Idle;
-                        state.output_sink = sink;
-                        state.last_error = None;
-                        status_change = Some((old_status, state.status));
-                    }
-                    PipelineEvent::Started { sink } => {
-                        state.status = DaemonStatus::Running;
-                        state.output_sink = sink;
-                        state.last_error = None;
-                        status_change = Some((old_status, state.status));
-                    }
-                    PipelineEvent::Idle => {
-                        state.status = DaemonStatus::Idle;
-                        status_change = Some((old_status, state.status));
-                    }
-                    PipelineEvent::Stopped => {
-                        state.status = DaemonStatus::Stopped;
-                        state.virtual_camera_verified = None;
-                        status_change = Some((old_status, state.status));
-                    }
-                    PipelineEvent::Error(error) => {
-                        state.status = DaemonStatus::Error;
-                        state.last_error = Some(error);
-                        status_change = Some((old_status, state.status));
-                    }
-                    PipelineEvent::VirtualCameraVerified { node_name, found } => {
-                        state.virtual_camera_name = node_name;
-                        state.virtual_camera_verified = Some(found);
-                    }
-                    PipelineEvent::InferenceChanged { active, detail } => {
-                        state.inference_active = active.clone();
-                        state.inference_detail = detail.clone();
-                        if state.inference_degraded() {
-                            warn!(
-                                detail = detail.as_deref().unwrap_or(""),
-                                "an NPU is present but models run on {active}"
-                            );
-                        }
-                        inference_change = Some((active, detail));
-                    }
-                }
-            }
+                let announcements = state.apply_pipeline_event(event);
+                (announcements, state.inference_degraded())
+            };
 
-            if let Some((old_status, new_status)) = status_change
-                && old_status != new_status
+            if let Some(status) = announcements.status
                 && let Err(err) =
-                    Daemon1Iface::daemon_status_changed(&status_emitter, new_status.as_str()).await
+                    Daemon1Iface::daemon_status_changed(&status_emitter, status.as_str()).await
             {
                 error!(%err, "failed to emit StatusChanged");
             }
 
-            if let Some((active, detail)) = inference_change {
+            if let Some((active, detail)) = announcements.inference {
                 let detail_str = detail.as_deref().unwrap_or("");
+                if degraded {
+                    warn!(
+                        detail = detail_str,
+                        "an NPU is present but models run on {active}"
+                    );
+                }
                 if let Err(err) =
                     Daemon1Iface::inference_changed(&status_emitter, &active, detail_str).await
                 {
