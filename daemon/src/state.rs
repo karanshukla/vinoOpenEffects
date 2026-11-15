@@ -1,7 +1,11 @@
 use shared::{
     config::AppState,
-    dbus::{VariantMap, bool_value, i32_value, str_value, u32_value},
+    dbus::{
+        VariantMap, bool_value, i32_value, str_value, u32_value, value_as_bool, value_as_i32,
+        value_as_string, value_as_u32,
+    },
 };
+use zvariant::OwnedValue;
 
 use crate::pipeline::probe::PIPEWIRE_NODE_NAME;
 
@@ -146,97 +150,58 @@ impl DaemonState {
     }
 
     pub fn effect_params(&self, id: &str) -> Option<VariantMap> {
-        let mut values = VariantMap::new();
-        match id {
+        let effects = &self.app.effects;
+        let params: Vec<(&str, OwnedValue)> = match id {
             "center_stage" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.center_stage.enabled),
-                );
-                values.insert(
-                    "zoom".into(),
-                    str_value(&self.app.effects.center_stage.zoom),
-                );
-                values.insert(
-                    "mode".into(),
-                    str_value(&self.app.effects.center_stage.mode),
-                );
-                values.insert(
-                    "crop_top".into(),
-                    u32_value(self.app.effects.center_stage.crop.top),
-                );
-                values.insert(
-                    "crop_bottom".into(),
-                    u32_value(self.app.effects.center_stage.crop.bottom),
-                );
-                values.insert(
-                    "crop_left".into(),
-                    u32_value(self.app.effects.center_stage.crop.left),
-                );
-                values.insert(
-                    "crop_right".into(),
-                    u32_value(self.app.effects.center_stage.crop.right),
-                );
+                let center_stage = &effects.center_stage;
+                vec![
+                    ("enabled", bool_value(center_stage.enabled)),
+                    ("zoom", str_value(&center_stage.zoom)),
+                    ("mode", str_value(&center_stage.mode)),
+                    ("crop_top", u32_value(center_stage.crop.top)),
+                    ("crop_bottom", u32_value(center_stage.crop.bottom)),
+                    ("crop_left", u32_value(center_stage.crop.left)),
+                    ("crop_right", u32_value(center_stage.crop.right)),
+                ]
             }
-            "portrait_blur" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.portrait_blur.enabled),
-                );
-                values.insert(
-                    "strength".into(),
-                    u32_value(self.app.effects.portrait_blur.strength as u32),
-                );
-            }
-            "bg_replace" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.bg_replace.enabled),
-                );
-                values.insert(
-                    "background".into(),
-                    str_value(&self.app.effects.bg_replace.background),
-                );
-            }
+            "portrait_blur" => vec![
+                ("enabled", bool_value(effects.portrait_blur.enabled)),
+                (
+                    "strength",
+                    u32_value(u32::from(effects.portrait_blur.strength)),
+                ),
+            ],
+            "bg_replace" => vec![
+                ("enabled", bool_value(effects.bg_replace.enabled)),
+                ("background", str_value(&effects.bg_replace.background)),
+            ],
             "studio_light" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.studio_light.enabled),
-                );
-                values.insert(
-                    "intensity".into(),
-                    u32_value(self.app.effects.studio_light.intensity as u32),
-                );
-                values.insert(
-                    "brightness".into(),
-                    i32_value(self.app.effects.studio_light.brightness as i32),
-                );
-                values.insert(
-                    "contrast".into(),
-                    u32_value(self.app.effects.studio_light.contrast as u32),
-                );
-                values.insert(
-                    "bg_brightness".into(),
-                    i32_value(self.app.effects.studio_light.bg_brightness as i32),
-                );
-                values.insert(
-                    "auto_light".into(),
-                    bool_value(self.app.effects.studio_light.auto_light),
-                );
-                values.insert(
-                    "auto_strength".into(),
-                    u32_value(self.app.effects.studio_light.auto_strength as u32),
-                );
+                let studio_light = &effects.studio_light;
+                vec![
+                    ("enabled", bool_value(studio_light.enabled)),
+                    ("intensity", u32_value(u32::from(studio_light.intensity))),
+                    ("brightness", i32_value(i32::from(studio_light.brightness))),
+                    ("contrast", u32_value(u32::from(studio_light.contrast))),
+                    (
+                        "bg_brightness",
+                        i32_value(i32::from(studio_light.bg_brightness)),
+                    ),
+                    ("auto_light", bool_value(studio_light.auto_light)),
+                    (
+                        "auto_strength",
+                        u32_value(u32::from(studio_light.auto_strength)),
+                    ),
+                ]
             }
-            "reactions" => {
-                values.insert(
-                    "enabled".into(),
-                    bool_value(self.app.effects.reactions.enabled),
-                );
-            }
+            "reactions" => vec![("enabled", bool_value(effects.reactions.enabled))],
             _ => return None,
-        }
-        Some(values)
+        };
+        Some(
+            params
+                .into_iter()
+                .map(|(key, value)| (key.to_owned(), value))
+                .collect(),
+        )
     }
 
     pub fn all_effect_state(&self) -> VariantMap {
@@ -272,96 +237,85 @@ impl DaemonState {
         true
     }
 
-    pub fn set_param(&mut self, id: &str, key: &str, value: &zvariant::OwnedValue) -> bool {
+    /// False for an unknown `id.key` or a value of the wrong type; out-of-range numbers are
+    /// clamped, as `tests::set_param_clamps_out_of_range_values` pins.
+    pub fn set_param(&mut self, id: &str, key: &str, value: &OwnedValue) -> bool {
+        let effects = &mut self.app.effects;
         match (id, key) {
             ("center_stage", "zoom") => {
-                if let Some(v) = shared::dbus::value_as_string(value) {
-                    self.app.effects.center_stage.zoom = v;
-                    return true;
-                }
+                store(&mut effects.center_stage.zoom, value_as_string(value))
             }
             ("center_stage", "mode") => {
-                if let Some(v) = shared::dbus::value_as_string(value) {
-                    self.app.effects.center_stage.mode = v;
-                    return true;
-                }
+                store(&mut effects.center_stage.mode, value_as_string(value))
             }
             ("center_stage", "crop_top") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.top = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.top, crop_inset(value))
             }
             ("center_stage", "crop_bottom") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.bottom = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.bottom, crop_inset(value))
             }
             ("center_stage", "crop_left") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.left = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.left, crop_inset(value))
             }
             ("center_stage", "crop_right") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.center_stage.crop.right = v.min(512);
-                    return true;
-                }
+                store(&mut effects.center_stage.crop.right, crop_inset(value))
             }
             ("portrait_blur", "strength") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.portrait_blur.strength = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.portrait_blur.strength, percent(value))
             }
             ("bg_replace", "background") => {
-                if let Some(v) = shared::dbus::value_as_string(value) {
-                    self.app.effects.bg_replace.background = v;
-                    return true;
-                }
+                store(&mut effects.bg_replace.background, value_as_string(value))
             }
             ("studio_light", "intensity") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.studio_light.intensity = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.studio_light.intensity, percent(value))
             }
             ("studio_light", "brightness") => {
-                if let Some(v) = shared::dbus::value_as_i32(value) {
-                    self.app.effects.studio_light.brightness = v.clamp(-100, 100) as i8;
-                    return true;
-                }
+                store(&mut effects.studio_light.brightness, signed_percent(value))
             }
             ("studio_light", "contrast") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.studio_light.contrast = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.studio_light.contrast, percent(value))
             }
             ("studio_light", "auto_light") => {
-                if let Some(v) = shared::dbus::value_as_bool(value) {
-                    self.app.effects.studio_light.auto_light = v;
-                    return true;
-                }
+                store(&mut effects.studio_light.auto_light, value_as_bool(value))
             }
             ("studio_light", "auto_strength") => {
-                if let Some(v) = shared::dbus::value_as_u32(value) {
-                    self.app.effects.studio_light.auto_strength = v.min(100) as u8;
-                    return true;
-                }
+                store(&mut effects.studio_light.auto_strength, percent(value))
             }
-            ("studio_light", "bg_brightness") => {
-                if let Some(v) = shared::dbus::value_as_i32(value) {
-                    self.app.effects.studio_light.bg_brightness = v.clamp(-100, 100) as i8;
-                    return true;
-                }
-            }
-            _ => {}
+            ("studio_light", "bg_brightness") => store(
+                &mut effects.studio_light.bg_brightness,
+                signed_percent(value),
+            ),
+            _ => false,
         }
-        false
     }
+}
+
+const MAX_CROP_INSET_PX: u32 = 512;
+const MAX_PERCENT: u32 = 100;
+const SIGNED_PERCENT: std::ops::RangeInclusive<i32> = -100..=100;
+
+/// Overwrites `slot` when the D-Bus value had the expected type; says whether it did.
+fn store<T>(slot: &mut T, parsed: Option<T>) -> bool {
+    match parsed {
+        Some(parsed) => {
+            *slot = parsed;
+            true
+        }
+        None => false,
+    }
+}
+
+fn crop_inset(value: &OwnedValue) -> Option<u32> {
+    value_as_u32(value).map(|inset| inset.min(MAX_CROP_INSET_PX))
+}
+
+fn percent(value: &OwnedValue) -> Option<u8> {
+    value_as_u32(value).map(|percent| percent.min(MAX_PERCENT) as u8)
+}
+
+fn signed_percent(value: &OwnedValue) -> Option<i8> {
+    value_as_i32(value)
+        .map(|percent| percent.clamp(*SIGNED_PERCENT.start(), *SIGNED_PERCENT.end()) as i8)
 }
 
 #[cfg(test)]
