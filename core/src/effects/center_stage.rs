@@ -354,9 +354,10 @@ mod tests {
 
     /// A stage committed to a half-frame crop at the center.
     fn settled() -> CenterStage {
-        let mut stage = CenterStage::default();
-        stage.target = crop(0.5, 0.5);
-        stage
+        CenterStage {
+            target: crop(0.5, 0.5),
+            ..Default::default()
+        }
     }
 
     /// Feed `raw` for `frames` frames; whether the target moved to it.
