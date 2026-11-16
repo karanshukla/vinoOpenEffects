@@ -268,33 +268,60 @@ fn wire_compare(
     cmd_tx: &CmdTx,
     comparing: &Rc<Cell<bool>>,
 ) {
-    let start = {
-        let button = button.clone();
-        let bypass_switch = bypass_switch.clone();
-        let cmd_tx = cmd_tx.clone();
-        let comparing = Rc::clone(comparing);
-        move || {
-            if !bypass_switch.is_active() || comparing.get() {
-                return;
-            }
-            comparing.set(true);
-            button.add_css_class("oe-comparing");
-            let _ = cmd_tx.send(GuiCommand::SetBypass { on: true });
-        }
-    };
-    let end = {
-        let button = button.clone();
-        let cmd_tx = cmd_tx.clone();
-        let comparing = Rc::clone(comparing);
-        move || {
-            if !comparing.replace(false) {
-                return;
-            }
-            button.remove_css_class("oe-comparing");
-            let _ = cmd_tx.send(GuiCommand::SetBypass { on: false });
-        }
-    };
+    let start = compare_start(button, bypass_switch, cmd_tx, comparing);
+    let end = compare_end(button, cmd_tx, comparing);
 
+    add_compare_pointer(button, &start, &end);
+    add_compare_keys(button, start, &end);
+
+    // Tabbing away mid-hold never delivers the key release.
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| end());
+    button.add_controller(focus);
+}
+
+fn compare_start(
+    button: &gtk::Button,
+    bypass_switch: &gtk::Switch,
+    cmd_tx: &CmdTx,
+    comparing: &Rc<Cell<bool>>,
+) -> impl Fn() + Clone + 'static {
+    let button = button.clone();
+    let bypass_switch = bypass_switch.clone();
+    let cmd_tx = cmd_tx.clone();
+    let comparing = Rc::clone(comparing);
+    move || {
+        if !bypass_switch.is_active() || comparing.get() {
+            return;
+        }
+        comparing.set(true);
+        button.add_css_class("oe-comparing");
+        let _ = cmd_tx.send(GuiCommand::SetBypass { on: true });
+    }
+}
+
+fn compare_end(
+    button: &gtk::Button,
+    cmd_tx: &CmdTx,
+    comparing: &Rc<Cell<bool>>,
+) -> impl Fn() + Clone + 'static {
+    let button = button.clone();
+    let cmd_tx = cmd_tx.clone();
+    let comparing = Rc::clone(comparing);
+    move || {
+        if !comparing.replace(false) {
+            return;
+        }
+        button.remove_css_class("oe-comparing");
+        let _ = cmd_tx.send(GuiCommand::SetBypass { on: false });
+    }
+}
+
+fn add_compare_pointer(
+    button: &gtk::Button,
+    start: &(impl Fn() + Clone + 'static),
+    end: &(impl Fn() + Clone + 'static),
+) {
     let gesture = gtk::GestureClick::new();
     gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
     {
@@ -313,7 +340,13 @@ fn wire_compare(
         gesture.connect_cancel(move |_, _| end());
     }
     button.add_controller(gesture);
+}
 
+fn add_compare_keys(
+    button: &gtk::Button,
+    start: impl Fn() + 'static,
+    end: &(impl Fn() + Clone + 'static),
+) {
     let keys = gtk::EventControllerKey::new();
     keys.set_propagation_phase(gtk::PropagationPhase::Capture);
     keys.connect_key_pressed(move |_, key, _, _| {
@@ -332,11 +365,6 @@ fn wire_compare(
         });
     }
     button.add_controller(keys);
-
-    // Tabbing away mid-hold never delivers the key release.
-    let focus = gtk::EventControllerFocus::new();
-    focus.connect_leave(move |_| end());
-    button.add_controller(focus);
 }
 
 fn is_activate_key(key: gtk::gdk::Key) -> bool {
