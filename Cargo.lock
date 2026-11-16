@@ -2555,7 +2555,6 @@ dependencies = [
  "vinoopeneffects-shared",
  "zbus",
  "zbus_xml",
- "zbus_xmlgen",
  "zvariant",
 ]
 
