@@ -37,11 +37,6 @@ pipewire = { workspace = true, features = ["v0_3_34"] }
 image.workspace = true
 libc.workspace  = true
 
-[build-dependencies]
-zbus        = { version = "5", features = ["tokio"] }
-zbus_xmlgen = "5"
-zbus_xml    = "5"
-
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
 futures-util.workspace = true
