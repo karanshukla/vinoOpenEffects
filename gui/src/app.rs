@@ -57,33 +57,16 @@ pub fn build_window(
     let rx_widgets = reactions::build(&cmd_tx);
     bg_widgets.card.set_expanded(true);
 
-    let cards = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(10)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(8)
-        .margin_end(16)
-        .build();
-    cards.append(&cs_widgets.card.list);
-    cards.append(&bg_widgets.card.list);
-    cards.append(&sl_widgets.card.list);
-    cards.append(&rx_widgets.card.list);
-
-    let controls = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .width_request(CONTROLS_WIDTH)
-        .vexpand(true)
-        .child(&cards)
-        .build();
+    let cards = build_cards(&[
+        &cs_widgets.card.list,
+        &bg_widgets.card.list,
+        &sl_widgets.card.list,
+        &rx_widgets.card.list,
+    ]);
+    let controls = build_controls(&cards);
 
     let preview = preview::build(&cmd_tx, Rc::clone(&prefs_widgets.camera_ids));
-    preview.frame.set_margin_top(16);
-    preview.frame.set_margin_bottom(16);
-    preview.frame.set_margin_start(16);
-    preview.frame.set_margin_end(8);
-    preview.frame.set_hexpand(true);
-    preview.frame.set_vexpand(true);
+    place_preview_frame(&preview.frame);
 
     let body = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -93,55 +76,13 @@ pub fn build_window(
 
     let menu_button = build_primary_menu();
 
-    let bypass_label = gtk::Label::builder()
-        .label("Effects")
-        .css_classes(["heading"])
-        .build();
-    let bypass_switch = gtk::Switch::builder()
-        .valign(gtk::Align::Center)
-        .active(true)
-        .tooltip_text("Toggle all effects. Off passes the camera through untouched.")
-        .build();
-    bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
-    let bypass_handler = {
-        let cmd_tx = cmd_tx.clone();
-        bypass_switch.connect_active_notify(move |sw| {
-            let _ = cmd_tx.send(GuiCommand::SetBypass {
-                on: !sw.is_active(),
-            });
-        })
-    };
-    let bypass_box = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(10)
-        .build();
-    bypass_box.append(&bypass_switch);
-    bypass_box.append(&bypass_label);
+    let (bypass_box, bypass_switch, bypass_handler) = build_bypass_toggle(&cmd_tx);
 
     let header = adw::HeaderBar::new();
     header.pack_start(&bypass_box);
     header.pack_end(&menu_button);
 
-    let banner = adw::Banner::builder()
-        .revealed(false)
-        .button_label("Start")
-        .build();
-    {
-        let cmd_tx = cmd_tx.clone();
-        banner.connect_button_clicked(move |_| {
-            let _ = cmd_tx.send(GuiCommand::Start);
-        });
-    }
-    let inference_banner = adw::Banner::builder()
-        .revealed(false)
-        .button_label("Retry NPU")
-        .build();
-    {
-        let cmd_tx = cmd_tx.clone();
-        inference_banner.connect_button_clicked(move |_| {
-            let _ = cmd_tx.send(GuiCommand::RetryInference);
-        });
-    }
+    let (banner, inference_banner) = build_banners(&cmd_tx);
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
@@ -184,25 +125,124 @@ pub fn build_window(
         comparing,
     });
 
-    let quitting = Rc::new(Cell::new(false));
+    connect_close_request(&window, &cmd_tx, &gui_config);
+    spawn_update_loop(app, update_rx, widgets);
+
+    window.present();
+}
+
+fn build_cards(lists: &[&gtk::ListBox]) -> gtk::Box {
+    let cards = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(10)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(8)
+        .margin_end(16)
+        .build();
+    for list in lists {
+        cards.append(*list);
+    }
+    cards
+}
+
+fn build_controls(cards: &gtk::Box) -> gtk::ScrolledWindow {
+    gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .width_request(CONTROLS_WIDTH)
+        .vexpand(true)
+        .child(cards)
+        .build()
+}
+
+fn place_preview_frame(frame: &gtk::Overlay) {
+    frame.set_margin_top(16);
+    frame.set_margin_bottom(16);
+    frame.set_margin_start(16);
+    frame.set_margin_end(8);
+    frame.set_hexpand(true);
+    frame.set_vexpand(true);
+}
+
+fn build_bypass_toggle(cmd_tx: &CmdTx) -> (gtk::Box, gtk::Switch, glib::SignalHandlerId) {
+    let bypass_label = gtk::Label::builder()
+        .label("Effects")
+        .css_classes(["heading"])
+        .build();
+    let bypass_switch = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(true)
+        .tooltip_text("Toggle all effects. Off passes the camera through untouched.")
+        .build();
+    bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
+    let bypass_handler = {
+        let cmd_tx = cmd_tx.clone();
+        bypass_switch.connect_active_notify(move |sw| {
+            let _ = cmd_tx.send(GuiCommand::SetBypass {
+                on: !sw.is_active(),
+            });
+        })
+    };
+    let bypass_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(10)
+        .build();
+    bypass_box.append(&bypass_switch);
+    bypass_box.append(&bypass_label);
+    (bypass_box, bypass_switch, bypass_handler)
+}
+
+fn build_banners(cmd_tx: &CmdTx) -> (adw::Banner, adw::Banner) {
+    let banner = adw::Banner::builder()
+        .revealed(false)
+        .button_label("Start")
+        .build();
     {
         let cmd_tx = cmd_tx.clone();
-        let gui_config = Rc::clone(&gui_config);
-        let quitting = Rc::clone(&quitting);
-        window.connect_close_request(move |_| {
-            if quitting.get() {
-                return glib::Propagation::Proceed;
-            }
-            let keep_running = gui_config.borrow().keep_running_in_background;
-            if keep_running || shared::systemd::is_enabled() {
-                return glib::Propagation::Proceed;
-            }
-            quitting.set(true);
-            let _ = cmd_tx.send(GuiCommand::QuitDaemon);
-            glib::Propagation::Stop
+        banner.connect_button_clicked(move |_| {
+            let _ = cmd_tx.send(GuiCommand::Start);
         });
     }
+    let inference_banner = adw::Banner::builder()
+        .revealed(false)
+        .button_label("Retry NPU")
+        .build();
+    {
+        let cmd_tx = cmd_tx.clone();
+        inference_banner.connect_button_clicked(move |_| {
+            let _ = cmd_tx.send(GuiCommand::RetryInference);
+        });
+    }
+    (banner, inference_banner)
+}
 
+fn connect_close_request(
+    window: &ApplicationWindow,
+    cmd_tx: &CmdTx,
+    gui_config: &Rc<RefCell<GuiConfig>>,
+) {
+    let quitting = Rc::new(Cell::new(false));
+    let cmd_tx = cmd_tx.clone();
+    let gui_config = Rc::clone(gui_config);
+    window.connect_close_request(move |_| {
+        if quitting.get() {
+            return glib::Propagation::Proceed;
+        }
+        let keep_running = gui_config.borrow().keep_running_in_background;
+        if keep_running || shared::systemd::is_enabled() {
+            return glib::Propagation::Proceed;
+        }
+        quitting.set(true);
+        let _ = cmd_tx.send(GuiCommand::QuitDaemon);
+        glib::Propagation::Stop
+    });
+}
+
+fn spawn_update_loop(
+    app: &adw::Application,
+    update_rx: async_channel::Receiver<UiUpdate>,
+    widgets: Rc<Widgets>,
+) {
     let loop_app = app.clone();
     glib::MainContext::default().spawn_local(async move {
         while let Ok(update) = update_rx.recv().await {
@@ -215,8 +255,6 @@ pub fn build_window(
             apply_update(&widgets, update);
         }
     });
-
-    window.present();
 }
 
 /// Press-and-hold on `button` (or holding Space/Enter while it has focus)
@@ -230,33 +268,60 @@ fn wire_compare(
     cmd_tx: &CmdTx,
     comparing: &Rc<Cell<bool>>,
 ) {
-    let start = {
-        let button = button.clone();
-        let bypass_switch = bypass_switch.clone();
-        let cmd_tx = cmd_tx.clone();
-        let comparing = Rc::clone(comparing);
-        move || {
-            if !bypass_switch.is_active() || comparing.get() {
-                return;
-            }
-            comparing.set(true);
-            button.add_css_class("oe-comparing");
-            let _ = cmd_tx.send(GuiCommand::SetBypass { on: true });
-        }
-    };
-    let end = {
-        let button = button.clone();
-        let cmd_tx = cmd_tx.clone();
-        let comparing = Rc::clone(comparing);
-        move || {
-            if !comparing.replace(false) {
-                return;
-            }
-            button.remove_css_class("oe-comparing");
-            let _ = cmd_tx.send(GuiCommand::SetBypass { on: false });
-        }
-    };
+    let start = compare_start(button, bypass_switch, cmd_tx, comparing);
+    let end = compare_end(button, cmd_tx, comparing);
 
+    add_compare_pointer(button, &start, &end);
+    add_compare_keys(button, start, &end);
+
+    // Tabbing away mid-hold never delivers the key release.
+    let focus = gtk::EventControllerFocus::new();
+    focus.connect_leave(move |_| end());
+    button.add_controller(focus);
+}
+
+fn compare_start(
+    button: &gtk::Button,
+    bypass_switch: &gtk::Switch,
+    cmd_tx: &CmdTx,
+    comparing: &Rc<Cell<bool>>,
+) -> impl Fn() + Clone + 'static {
+    let button = button.clone();
+    let bypass_switch = bypass_switch.clone();
+    let cmd_tx = cmd_tx.clone();
+    let comparing = Rc::clone(comparing);
+    move || {
+        if !bypass_switch.is_active() || comparing.get() {
+            return;
+        }
+        comparing.set(true);
+        button.add_css_class("oe-comparing");
+        let _ = cmd_tx.send(GuiCommand::SetBypass { on: true });
+    }
+}
+
+fn compare_end(
+    button: &gtk::Button,
+    cmd_tx: &CmdTx,
+    comparing: &Rc<Cell<bool>>,
+) -> impl Fn() + Clone + 'static {
+    let button = button.clone();
+    let cmd_tx = cmd_tx.clone();
+    let comparing = Rc::clone(comparing);
+    move || {
+        if !comparing.replace(false) {
+            return;
+        }
+        button.remove_css_class("oe-comparing");
+        let _ = cmd_tx.send(GuiCommand::SetBypass { on: false });
+    }
+}
+
+fn add_compare_pointer(
+    button: &gtk::Button,
+    start: &(impl Fn() + Clone + 'static),
+    end: &(impl Fn() + Clone + 'static),
+) {
     let gesture = gtk::GestureClick::new();
     gesture.set_propagation_phase(gtk::PropagationPhase::Capture);
     {
@@ -275,7 +340,13 @@ fn wire_compare(
         gesture.connect_cancel(move |_, _| end());
     }
     button.add_controller(gesture);
+}
 
+fn add_compare_keys(
+    button: &gtk::Button,
+    start: impl Fn() + 'static,
+    end: &(impl Fn() + Clone + 'static),
+) {
     let keys = gtk::EventControllerKey::new();
     keys.set_propagation_phase(gtk::PropagationPhase::Capture);
     keys.connect_key_pressed(move |_, key, _, _| {
@@ -294,11 +365,6 @@ fn wire_compare(
         });
     }
     button.add_controller(keys);
-
-    // Tabbing away mid-hold never delivers the key release.
-    let focus = gtk::EventControllerFocus::new();
-    focus.connect_leave(move |_| end());
-    button.add_controller(focus);
 }
 
 fn is_activate_key(key: gtk::gdk::Key) -> bool {
@@ -653,4 +719,147 @@ fn apply_bypass(w: &Widgets, on: bool) {
     w.bypass_switch.unblock_signal(&w.bypass_handler);
     w.cards.set_sensitive(!on);
     w.preview.compare.set_sensitive(!on);
+}
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, run, type_names};
+
+    #[test]
+    fn the_cards_column_holds_the_lists_in_the_order_given() {
+        run(|| {
+            let lists: Vec<gtk::ListBox> = (0..4).map(|_| gtk::ListBox::new()).collect();
+            let refs: Vec<&gtk::ListBox> = lists.iter().collect();
+            let cards = build_cards(&refs);
+            assert_eq!(cards.orientation(), gtk::Orientation::Vertical);
+            let held = children(&cards);
+            assert_eq!(held.len(), 4);
+            for (held, list) in held.iter().zip(&lists) {
+                assert_eq!(held, list.upcast_ref::<gtk::Widget>());
+            }
+        });
+    }
+
+    #[test]
+    fn the_controls_column_scrolls_only_vertically_at_a_fixed_width() {
+        run(|| {
+            let cards = build_cards(&[]);
+            let controls = build_controls(&cards);
+            assert_eq!(controls.width_request(), CONTROLS_WIDTH);
+            assert_eq!(controls.hscrollbar_policy(), gtk::PolicyType::Never);
+            assert!(controls.vexpands());
+            let inner = controls.child().unwrap();
+            assert!(inner.first_child().is_some_and(|c| c == cards));
+        });
+    }
+
+    #[test]
+    fn placing_the_preview_frame_sets_margins_and_expands_it() {
+        run(|| {
+            let frame = gtk::Overlay::new();
+            place_preview_frame(&frame);
+            assert_eq!(
+                (
+                    frame.margin_top(),
+                    frame.margin_bottom(),
+                    frame.margin_start(),
+                    frame.margin_end()
+                ),
+                (16, 16, 16, 8)
+            );
+            assert!(frame.hexpands() && frame.vexpands());
+        });
+    }
+
+    #[test]
+    fn the_bypass_toggle_is_a_named_switch_before_its_label_and_starts_on() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let (bypass_box, switch, _handler) = build_bypass_toggle(&tx);
+            assert!(switch.is_active());
+            assert!(gtk::test_accessible_has_property(
+                &switch,
+                gtk::AccessibleProperty::Label
+            ));
+            let parts = children(&bypass_box);
+            assert_eq!(type_names(&parts), ["GtkSwitch", "GtkLabel"]);
+            let label = parts[1].downcast_ref::<gtk::Label>().unwrap();
+            assert_eq!(label.label(), "Effects");
+        });
+    }
+
+    #[test]
+    fn switching_effects_off_sends_bypass_on_and_back() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (_box, switch, _handler) = build_bypass_toggle(&tx);
+            switch.set_active(false);
+            switch.set_active(true);
+            let sent = drain(&mut rx);
+            assert!(matches!(
+                sent.as_slice(),
+                [
+                    GuiCommand::SetBypass { on: true },
+                    GuiCommand::SetBypass { on: false }
+                ]
+            ));
+        });
+    }
+
+    #[test]
+    fn the_banners_start_hidden_and_their_buttons_send_start_and_retry() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (banner, inference) = build_banners(&tx);
+            assert!(!banner.is_revealed() && !inference.is_revealed());
+            assert_eq!(banner.button_label().as_deref(), Some("Start"));
+            assert_eq!(inference.button_label().as_deref(), Some("Retry NPU"));
+            banner.emit_by_name::<()>("button-clicked", &[]);
+            inference.emit_by_name::<()>("button-clicked", &[]);
+            let sent = drain(&mut rx);
+            assert!(matches!(
+                sent.as_slice(),
+                [GuiCommand::Start, GuiCommand::RetryInference]
+            ));
+        });
+    }
+
+    #[test]
+    fn only_space_and_the_enter_keys_activate_the_compare_button() {
+        use gtk::gdk::Key;
+        for key in [Key::space, Key::Return, Key::KP_Enter] {
+            assert!(is_activate_key(key));
+        }
+        for key in [Key::Tab, Key::a, Key::Escape] {
+            assert!(!is_activate_key(key));
+        }
+    }
+
+    #[test]
+    fn effect_params_are_found_by_their_id_prefix() {
+        let state: VariantMap = [
+            (
+                "studio_light.intensity".to_string(),
+                shared::dbus::u32_value(7),
+            ),
+            (
+                "studio_light.enabled".to_string(),
+                shared::dbus::bool_value(true),
+            ),
+            (
+                "portrait_blur.strength".to_string(),
+                shared::dbus::u32_value(66),
+            ),
+            (
+                "studio_lightx.other".to_string(),
+                shared::dbus::u32_value(1),
+            ),
+        ]
+        .into();
+        let params = extract_effect_params(&state, "studio_light");
+        let mut keys: Vec<_> = params.keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["enabled", "intensity"]);
+    }
 }

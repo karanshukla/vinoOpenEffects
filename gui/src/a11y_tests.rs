@@ -202,7 +202,7 @@ fn font_sizes_follow_text_scaling() {
 
 /// Initialise GTK + libadwaita with the test accessibility backend, or say
 /// why not.
-fn init_gtk() -> bool {
+pub(crate) fn init_gtk() -> bool {
     let data = std::env::temp_dir().join("vinoopeneffects-a11y-test");
     // SAFETY: no other test reads these variables, and GTK isn't running yet.
     unsafe {
@@ -346,9 +346,10 @@ impl Audit {
 
 #[test]
 fn every_control_has_an_accessible_name() {
-    if !init_gtk() {
-        return;
-    }
+    crate::gtk_test::run(every_control_has_an_accessible_name_on_gtk_thread);
+}
+
+fn every_control_has_an_accessible_name_on_gtk_thread() {
     let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<GuiCommand>();
     let mut audit = Audit::default();
 

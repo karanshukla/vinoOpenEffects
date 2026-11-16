@@ -5,6 +5,8 @@ mod app;
 mod config;
 mod constants;
 mod dbus_client;
+#[cfg(test)]
+mod gtk_test;
 mod models;
 mod pages;
 mod preferences;

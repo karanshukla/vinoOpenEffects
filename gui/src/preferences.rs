@@ -64,26 +64,58 @@ pub(crate) fn build_page(
         .icon_name("preferences-system-symbolic")
         .build();
 
+    let camera = add_camera_group(&page, cmd_tx);
+    let processor = add_processor_group(&page, cmd_tx);
+    let models = add_models_group(&page);
+    add_startup_group(&page, &gui_config);
+
+    (
+        page,
+        Widgets {
+            camera_combo: camera.combo,
+            camera_handler: camera.handler,
+            camera_ids: camera.ids,
+            virtual_cam_label: camera.virtual_cam_label,
+            model_rows: models.rows,
+            models_group: models.group,
+            inference_row: processor.row,
+            inference_group: processor.group,
+            inference_toggle_auto: processor.toggle_auto,
+            inference_toggle_cpu: processor.toggle_cpu,
+            inference_toggle_npu: processor.toggle_npu,
+            inference_handler: processor.handler,
+        },
+    )
+}
+
+struct CameraGroup {
+    combo: adw::ComboRow,
+    handler: glib::SignalHandlerId,
+    ids: Rc<RefCell<Vec<String>>>,
+    virtual_cam_label: gtk::Label,
+}
+
+fn add_camera_group(page: &adw::PreferencesPage, cmd_tx: &CmdTx) -> CameraGroup {
     let camera_group = pref_group(
         "Camera",
         "Choose the physical camera vinoOpenEffects captures from",
     );
-    let camera_combo = adw::ComboRow::builder()
+    let combo = adw::ComboRow::builder()
         .title("Source")
         .model(&gtk::StringList::new(&["No cameras found"]))
         .build();
-    let camera_ids = Rc::new(RefCell::new(Vec::<String>::new()));
-    let camera_handler = {
+    let ids = Rc::new(RefCell::new(Vec::<String>::new()));
+    let handler = {
         let cmd_tx = cmd_tx.clone();
-        let camera_ids = Rc::clone(&camera_ids);
-        camera_combo.connect_selected_notify(move |row| {
-            let ids = camera_ids.borrow();
+        let ids = Rc::clone(&ids);
+        combo.connect_selected_notify(move |row| {
+            let ids = ids.borrow();
             if let Some(id) = ids.get(row.selected() as usize) {
                 let _ = cmd_tx.send(GuiCommand::SelectCamera { id: id.clone() });
             }
         })
     };
-    camera_group.add(&camera_combo);
+    camera_group.add(&combo);
 
     let virtual_cam_row = adw::ActionRow::builder()
         .title("Virtual Camera")
@@ -98,45 +130,79 @@ pub(crate) fn build_page(
     camera_group.add(&virtual_cam_row);
     page.add(&camera_group);
 
-    let inference_group_box = pref_group(
+    CameraGroup {
+        combo,
+        handler,
+        ids,
+        virtual_cam_label,
+    }
+}
+
+struct ProcessorGroup {
+    row: adw::ActionRow,
+    group: adw::ToggleGroup,
+    toggle_auto: adw::Toggle,
+    toggle_cpu: adw::Toggle,
+    toggle_npu: adw::Toggle,
+    handler: glib::SignalHandlerId,
+}
+
+fn add_processor_group(page: &adw::PreferencesPage, cmd_tx: &CmdTx) -> ProcessorGroup {
+    let group_box = pref_group(
         "Processor",
         "Where the effect models run. Auto picks the NPU when there is one",
     );
 
-    let inference_row = adw::ActionRow::builder()
+    let row = adw::ActionRow::builder()
         .title("Run Models On")
         .subtitle("Using the CPU")
         .build();
 
-    let inference_toggle_auto = adw::Toggle::builder().name("auto").label("Auto").build();
-    let inference_toggle_cpu = adw::Toggle::builder().name("cpu").label("CPU").build();
-    let inference_toggle_npu = adw::Toggle::builder().name("npu").label("NPU").build();
+    let toggle_auto = adw::Toggle::builder().name("auto").label("Auto").build();
+    let toggle_cpu = adw::Toggle::builder().name("cpu").label("CPU").build();
+    let toggle_npu = adw::Toggle::builder().name("npu").label("NPU").build();
 
-    let inference_group = adw::ToggleGroup::builder()
+    let group = adw::ToggleGroup::builder()
         .valign(gtk::Align::Center)
         .css_classes(["round"])
         .build();
-    inference_group.add(inference_toggle_auto.clone());
-    inference_group.add(inference_toggle_cpu.clone());
-    inference_group.add(inference_toggle_npu.clone());
-    inference_group.set_active_name(Some("auto"));
-    inference_group.update_property(&[gtk::accessible::Property::Label("Run models on")]);
+    group.add(toggle_auto.clone());
+    group.add(toggle_cpu.clone());
+    group.add(toggle_npu.clone());
+    group.set_active_name(Some("auto"));
+    group.update_property(&[gtk::accessible::Property::Label("Run models on")]);
 
-    let inference_handler = {
+    let handler = {
         let cmd_tx = cmd_tx.clone();
-        inference_group.connect_active_notify(move |group| {
+        group.connect_active_notify(move |group| {
             if let Some(name) = group.active_name() {
                 let _ = cmd_tx.send(GuiCommand::SetInferenceProvider(name.to_string()));
             }
         })
     };
 
-    inference_row.add_suffix(&inference_group);
-    inference_group_box.add(&inference_row);
-    page.add(&inference_group_box);
+    row.add_suffix(&group);
+    group_box.add(&row);
+    page.add(&group_box);
 
-    let models_group = adw::PreferencesGroup::builder().title("Models").build();
-    let mut model_rows = HashMap::new();
+    ProcessorGroup {
+        row,
+        group,
+        toggle_auto,
+        toggle_cpu,
+        toggle_npu,
+        handler,
+    }
+}
+
+struct ModelsGroup {
+    group: adw::PreferencesGroup,
+    rows: HashMap<&'static str, adw::ActionRow>,
+}
+
+fn add_models_group(page: &adw::PreferencesPage) -> ModelsGroup {
+    let group = adw::PreferencesGroup::builder().title("Models").build();
+    let mut rows = HashMap::new();
     for (id, name, purpose) in BUNDLED_MODELS {
         let row = adw::ActionRow::builder()
             .title(*name)
@@ -148,12 +214,15 @@ pub(crate) fn build_page(
             .build();
         row.add_suffix(&pill);
         unsafe { row.set_data("pill", pill) };
-        models_group.add(&row);
-        model_rows.insert(*id, row);
+        group.add(&row);
+        rows.insert(*id, row);
     }
-    models_group.add(&delete_models_row());
-    page.add(&models_group);
+    group.add(&delete_models_row());
+    page.add(&group);
+    ModelsGroup { group, rows }
+}
 
+fn add_startup_group(page: &adw::PreferencesPage, gui_config: &Rc<RefCell<GuiConfig>>) {
     let startup = pref_group("Startup", "Control when the vinoOpenEffects daemon runs");
 
     let keep_running_row = adw::SwitchRow::builder()
@@ -187,7 +256,7 @@ pub(crate) fn build_page(
     startup.add(&boot_row);
 
     {
-        let gui_config = Rc::clone(&gui_config);
+        let gui_config = Rc::clone(gui_config);
         keep_running_row.connect_active_notify(move |row| {
             gui_config.borrow_mut().keep_running_in_background = row.is_active();
             gui_config.borrow().save();
@@ -196,24 +265,6 @@ pub(crate) fn build_page(
     startup.add(&keep_running_row);
 
     page.add(&startup);
-
-    (
-        page,
-        Widgets {
-            camera_combo,
-            camera_handler,
-            camera_ids,
-            virtual_cam_label,
-            model_rows,
-            models_group,
-            inference_row,
-            inference_group,
-            inference_toggle_auto,
-            inference_toggle_cpu,
-            inference_toggle_npu,
-            inference_handler,
-        },
-    )
 }
 
 /// "Downloaded Models": what's on disk in the user's home, and Delete…, which
@@ -366,5 +417,160 @@ mod delete_tests {
             on_disk(8_400_000, "~/.local/share/vinoopeneffects/models"),
             "8.4\u{a0}MB in ~/.local/share/vinoopeneffects/models"
         );
+    }
+}
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, run};
+
+    fn group_titles(page: &adw::PreferencesPage) -> Vec<String> {
+        let mut titles = Vec::new();
+        let mut stack = children(page);
+        stack.reverse();
+        while let Some(widget) = stack.pop() {
+            if let Some(group) = widget.downcast_ref::<adw::PreferencesGroup>() {
+                titles.push(group.title().to_string());
+            } else {
+                let mut inner = children(&widget);
+                inner.reverse();
+                stack.extend(inner);
+            }
+        }
+        titles
+    }
+
+    #[test]
+    fn the_camera_group_has_a_source_combo_and_a_virtual_camera_readout() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let page = adw::PreferencesPage::new();
+            let group = add_camera_group(&page, &tx);
+            assert_eq!(group.combo.title(), "Source");
+            assert_eq!(group.combo.model().unwrap().n_items(), 1);
+            assert_eq!(group.virtual_cam_label.label(), "—");
+            assert!(group.virtual_cam_label.is_selectable());
+            assert!(group.ids.borrow().is_empty());
+            assert_eq!(group_titles(&page), ["Camera"]);
+        });
+    }
+
+    #[test]
+    fn choosing_a_source_sends_the_camera_id_at_that_position() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let page = adw::PreferencesPage::new();
+            let group = add_camera_group(&page, &tx);
+            *group.ids.borrow_mut() = vec!["cam-a".into(), "cam-b".into()];
+            group
+                .combo
+                .set_model(Some(&gtk::StringList::new(&["A", "B"])));
+            drain(&mut rx);
+            group.combo.set_selected(1);
+            let sent = drain(&mut rx);
+            assert!(
+                matches!(sent.last(), Some(GuiCommand::SelectCamera { id }) if id == "cam-b"),
+                "{sent:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn the_processor_group_offers_auto_cpu_npu_with_auto_selected() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let page = adw::PreferencesPage::new();
+            let group = add_processor_group(&page, &tx);
+            assert_eq!(group.row.title(), "Run Models On");
+            assert_eq!(group.group.n_toggles(), 3);
+            for (i, name) in ["auto", "cpu", "npu"].iter().enumerate() {
+                let toggle = group.group.toggle(i as u32).unwrap();
+                assert_eq!(toggle.name().as_str(), *name);
+            }
+            assert_eq!(group.toggle_auto.label().as_deref(), Some("Auto"));
+            assert_eq!(group.toggle_cpu.label().as_deref(), Some("CPU"));
+            assert_eq!(group.toggle_npu.label().as_deref(), Some("NPU"));
+            assert_eq!(group.group.active_name().as_deref(), Some("auto"));
+            assert_eq!(group_titles(&page), ["Processor"]);
+        });
+    }
+
+    #[test]
+    fn choosing_a_processor_sends_its_name() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let page = adw::PreferencesPage::new();
+            let group = add_processor_group(&page, &tx);
+            group.group.set_active_name(Some("npu"));
+            let sent = drain(&mut rx);
+            assert!(
+                matches!(sent.as_slice(), [GuiCommand::SetInferenceProvider(p)] if p == "npu"),
+                "{sent:?}"
+            );
+        });
+    }
+
+    fn without_entities(markup: &str) -> String {
+        markup
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&#39;", "'")
+            .replace("&amp;", "&")
+    }
+
+    #[test]
+    fn the_models_group_lists_each_bundled_model_then_the_delete_row() {
+        run(|| {
+            let page = adw::PreferencesPage::new();
+            let models = add_models_group(&page);
+            assert_eq!(models.group.title(), "Models");
+            assert_eq!(models.rows.len(), BUNDLED_MODELS.len());
+            for (id, name, purpose) in BUNDLED_MODELS {
+                let row = &models.rows[id];
+                assert_eq!(row.title(), *name);
+                // The constants are Pango markup; libadwaita versions differ on whether
+                // the row hands it back escaped.
+                let shown = row.subtitle().unwrap();
+                assert_eq!(without_entities(&shown), without_entities(purpose));
+            }
+            assert_eq!(group_titles(&page), ["Models"]);
+        });
+    }
+
+    #[test]
+    fn the_startup_group_has_the_background_row_after_the_login_row() {
+        run(|| {
+            let page = adw::PreferencesPage::new();
+            let config = Rc::new(RefCell::new(GuiConfig::default()));
+            add_startup_group(&page, &config);
+            assert_eq!(group_titles(&page), ["Startup"]);
+            let mut titles = Vec::new();
+            let mut stack = children(&page);
+            while let Some(widget) = stack.pop() {
+                if let Some(row) = widget.downcast_ref::<adw::SwitchRow>() {
+                    titles.push(row.title().to_string());
+                } else {
+                    stack.extend(children(&widget));
+                }
+            }
+            titles.sort();
+            assert_eq!(titles, ["Run in Background", "Start at Login"]);
+        });
+    }
+
+    #[test]
+    fn the_page_holds_camera_processor_models_startup_in_that_order() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let (page, widgets) = build_page(&tx, Rc::new(RefCell::new(GuiConfig::default())));
+            assert_eq!(
+                group_titles(&page),
+                ["Camera", "Processor", "Models", "Startup"]
+            );
+            assert_eq!(widgets.model_rows.len(), BUNDLED_MODELS.len());
+        });
     }
 }

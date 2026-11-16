@@ -36,16 +36,36 @@ pub struct Widgets {
 const AUTO_LIGHT_SUBTITLE: &str = "A low-light model that brightens a dim room";
 const AUTO_LIGHT_NO_NPU: &str = "Needs an Intel NPU";
 
-pub fn build(cmd_tx: &CmdTx) -> Widgets {
-    let card = {
+fn build_card(cmd_tx: &CmdTx) -> EffectCard {
+    let cmd_tx = cmd_tx.clone();
+    EffectCard::new("Studio Light", "display-brightness-symbolic", move |on| {
+        let _ = cmd_tx.send(GuiCommand::SetEnabled {
+            id: "studio_light".into(),
+            on,
+        });
+    })
+}
+
+fn build_auto_light_switch(cmd_tx: &CmdTx) -> (adw::SwitchRow, gtk::glib::SignalHandlerId) {
+    let auto_light = adw::SwitchRow::builder()
+        .title("Brighten Dark Frames")
+        .subtitle(AUTO_LIGHT_NO_NPU)
+        .build();
+    let handler = {
         let cmd_tx = cmd_tx.clone();
-        EffectCard::new("Studio Light", "display-brightness-symbolic", move |on| {
-            let _ = cmd_tx.send(GuiCommand::SetEnabled {
+        auto_light.connect_active_notify(move |row| {
+            let _ = cmd_tx.send(GuiCommand::SetParam {
                 id: "studio_light".into(),
-                on,
+                key: "auto_light".into(),
+                value: bool_value(row.is_active()),
             });
         })
     };
+    (auto_light, handler)
+}
+
+pub fn build(cmd_tx: &CmdTx) -> Widgets {
+    let card = build_card(cmd_tx);
 
     let on_you = plain_row(&section_label("On You"));
     let (intensity_row, intensity) = slider_row_u32(
@@ -79,20 +99,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         cmd_tx,
     );
     let auto_section = plain_row(&section_label("Auto Light"));
-    let auto_light = adw::SwitchRow::builder()
-        .title("Brighten Dark Frames")
-        .subtitle(AUTO_LIGHT_NO_NPU)
-        .build();
-    let auto_light_handler = {
-        let cmd_tx = cmd_tx.clone();
-        auto_light.connect_active_notify(move |row| {
-            let _ = cmd_tx.send(GuiCommand::SetParam {
-                id: "studio_light".into(),
-                key: "auto_light".into(),
-                value: bool_value(row.is_active()),
-            });
-        })
-    };
+    let (auto_light, auto_light_handler) = build_auto_light_switch(cmd_tx);
     let (auto_strength_row, auto_strength) = slider_row_u32(
         "Strength",
         "",
@@ -209,5 +216,102 @@ impl Widgets {
         if let Some(v) = params.get("auto_strength").and_then(value_as_u32) {
             self.auto_strength.set_value(v as f64);
         }
+    }
+}
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, pump, run};
+
+    #[test]
+    fn the_card_is_named_studio_light_and_starts_off() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let card = build_card(&tx);
+            assert!(!card.is_on());
+            let expander = card.list.first_child().unwrap();
+            let expander = expander.downcast_ref::<adw::ExpanderRow>().unwrap();
+            assert_eq!(expander.title(), "Studio Light");
+            assert_eq!(expander.subtitle(), "Off");
+        });
+    }
+
+    #[test]
+    fn the_card_switch_sends_studio_light_enabled() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let widgets = build(&tx);
+            widgets.card.set_on(true);
+            assert!(drain(&mut rx).is_empty(), "set_on must not echo");
+            let switch = find_switch(widgets.card.list.upcast_ref()).expect("card has a switch");
+            switch.set_active(false);
+            let sent = drain(&mut rx);
+            assert!(
+                matches!(sent.as_slice(), [GuiCommand::SetEnabled { id, on: false }] if id == "studio_light"),
+                "{sent:?}"
+            );
+        });
+    }
+
+    fn find_switch(widget: &gtk::Widget) -> Option<gtk::Switch> {
+        if let Some(switch) = widget.downcast_ref::<gtk::Switch>() {
+            return Some(switch.clone());
+        }
+        children(widget).iter().find_map(find_switch)
+    }
+
+    #[test]
+    fn the_auto_light_switch_says_it_needs_an_npu_and_sends_its_value() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (row, _handler) = build_auto_light_switch(&tx);
+            assert_eq!(row.title(), "Brighten Dark Frames");
+            assert_eq!(row.subtitle().as_deref(), Some("Needs an Intel NPU"));
+            row.set_active(true);
+            let sent = drain(&mut rx);
+            match sent.as_slice() {
+                [GuiCommand::SetParam { id, key, value }] => {
+                    assert_eq!((id.as_str(), key.as_str()), ("studio_light", "auto_light"));
+                    assert_eq!(shared::dbus::value_as_bool(value), Some(true));
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn the_rows_run_on_you_then_auto_light_then_behind_you() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let widgets = build(&tx);
+            assert_eq!(widgets.rows.len(), 9);
+            let headings: Vec<String> = widgets
+                .rows
+                .iter()
+                .filter_map(|r| r.child())
+                .filter_map(|c| c.downcast::<gtk::Label>().ok())
+                .map(|l| l.label().to_string())
+                .collect();
+            assert_eq!(headings, ["On You", "Auto Light", "Behind You"]);
+            assert!(widgets.rows[5].is::<adw::SwitchRow>());
+            assert_eq!(widgets.rows[6], widgets.auto_strength_row);
+        });
+    }
+
+    #[test]
+    fn turning_studio_light_on_wakes_the_rows_but_auto_light_waits_for_an_npu() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let widgets = build(&tx);
+            let on: shared::dbus::VariantMap =
+                [("enabled".to_string(), shared::dbus::bool_value(true))].into();
+            widgets.apply(&on);
+            assert!(widgets.rows[1].is_sensitive());
+            assert!(!widgets.auto_light_sensitive());
+            widgets.set_npu_available(true);
+            assert!(widgets.auto_light_sensitive());
+            pump(10);
+        });
     }
 }
