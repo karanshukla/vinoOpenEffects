@@ -114,6 +114,70 @@ async fn run(
 
 /// Returns `Ok(())` when the client should stop for good (quit requested);
 /// returns `Err` on a lost connection so the caller can reconnect.
+/// Returns true when the command loop should end.
+async fn handle_command(
+    cmd: Option<GuiCommand>,
+    effects: &Effects1Proxy<'_>,
+    daemon: &Daemon1Proxy<'_>,
+    devices: &Devices1Proxy<'_>,
+    update_tx: &async_channel::Sender<UiUpdate>,
+) -> bool {
+    // Log failed calls instead of propagating: a teardown would re-snapshot state and
+    // visibly reset the controls.
+    match cmd {
+        Some(GuiCommand::SetEnabled { id, on }) => {
+            if let Err(err) = effects.set_enabled(&id, on).await {
+                tracing::warn!(%err, id, "SetEnabled failed");
+            }
+        }
+        Some(GuiCommand::SetParam { id, key, value }) => {
+            let value: Value<'_> = value.into();
+            if let Err(err) = effects.set_param(&id, &key, &value).await {
+                tracing::warn!(%err, id, key, "SetParam failed");
+            }
+        }
+        Some(GuiCommand::SetBypass { on }) => {
+            if let Err(err) = effects.set_bypass(on).await {
+                tracing::warn!(%err, on, "SetBypass failed");
+            }
+        }
+        Some(GuiCommand::SelectCamera { id }) => {
+            if let Err(err) = devices.select_camera(&id).await {
+                tracing::warn!(%err, id, "SelectCamera failed");
+            }
+        }
+        Some(GuiCommand::TriggerReaction { id }) => {
+            if let Err(err) = effects.trigger_reaction(&id).await {
+                tracing::warn!(%err, id, "TriggerReaction failed");
+            }
+        }
+        Some(GuiCommand::SetInferenceProvider(provider)) => {
+            if let Err(err) = daemon.set_inference_provider(&provider).await {
+                tracing::warn!(%err, provider, "SetInferenceProvider failed");
+            }
+        }
+        Some(GuiCommand::RetryInference) => {
+            if let Err(err) = daemon.retry_inference().await {
+                tracing::warn!(%err, "RetryInference failed");
+            }
+        }
+        Some(GuiCommand::Start) => {
+            if let Err(err) = daemon.start().await {
+                tracing::warn!(%err, "Start failed");
+            }
+        }
+        Some(GuiCommand::QuitDaemon) => {
+            if let Err(err) = daemon.quit().await {
+                tracing::warn!(%err, "Quit failed (daemon may already be gone)");
+            }
+            update_tx.send(UiUpdate::DaemonQuit).await.ok();
+            return true;
+        }
+        None => return true,
+    }
+    false
+}
+
 async fn run_once(
     cmd_rx: &mut mpsc::UnboundedReceiver<GuiCommand>,
     update_tx: &async_channel::Sender<UiUpdate>,
@@ -148,58 +212,8 @@ async fn run_once(
     loop {
         tokio::select! {
             cmd = cmd_rx.recv() => {
-                // Log failed calls instead of propagating: a teardown would re-snapshot state and
-                // visibly reset the controls.
-                match cmd {
-                    Some(GuiCommand::SetEnabled { id, on }) => {
-                        if let Err(err) = effects.set_enabled(&id, on).await {
-                            tracing::warn!(%err, id, "SetEnabled failed");
-                        }
-                    }
-                    Some(GuiCommand::SetParam { id, key, value }) => {
-                        let value: Value<'_> = value.into();
-                        if let Err(err) = effects.set_param(&id, &key, &value).await {
-                            tracing::warn!(%err, id, key, "SetParam failed");
-                        }
-                    }
-                    Some(GuiCommand::SetBypass { on }) => {
-                        if let Err(err) = effects.set_bypass(on).await {
-                            tracing::warn!(%err, on, "SetBypass failed");
-                        }
-                    }
-                    Some(GuiCommand::SelectCamera { id }) => {
-                        if let Err(err) = devices.select_camera(&id).await {
-                            tracing::warn!(%err, id, "SelectCamera failed");
-                        }
-                    }
-                    Some(GuiCommand::TriggerReaction { id }) => {
-                        if let Err(err) = effects.trigger_reaction(&id).await {
-                            tracing::warn!(%err, id, "TriggerReaction failed");
-                        }
-                    }
-                    Some(GuiCommand::SetInferenceProvider(provider)) => {
-                        if let Err(err) = daemon.set_inference_provider(&provider).await {
-                            tracing::warn!(%err, provider, "SetInferenceProvider failed");
-                        }
-                    }
-                    Some(GuiCommand::RetryInference) => {
-                        if let Err(err) = daemon.retry_inference().await {
-                            tracing::warn!(%err, "RetryInference failed");
-                        }
-                    }
-                    Some(GuiCommand::Start) => {
-                        if let Err(err) = daemon.start().await {
-                            tracing::warn!(%err, "Start failed");
-                        }
-                    }
-                    Some(GuiCommand::QuitDaemon) => {
-                        if let Err(err) = daemon.quit().await {
-                            tracing::warn!(%err, "Quit failed (daemon may already be gone)");
-                        }
-                        update_tx.send(UiUpdate::DaemonQuit).await.ok();
-                        return Ok(());
-                    }
-                    None => return Ok(()),
+                if handle_command(cmd, &effects, &daemon, &devices, update_tx).await {
+                    return Ok(());
                 }
             }
             signal = effect_changed.next() => {
