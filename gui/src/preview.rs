@@ -60,126 +60,18 @@ pub struct Preview {
 /// Build the preview. `camera_ids` holds the camera ids in the same order as
 /// the picker's model, so a selection resolves back to an id.
 pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview> {
-    let picture = gtk::Picture::builder()
-        .content_fit(gtk::ContentFit::Cover)
-        .hexpand(true)
-        .vexpand(true)
-        .build();
-    picture.update_property(&[
-        gtk::accessible::Property::Label("Camera preview"),
-        gtk::accessible::Property::Description("The virtual camera's output, with effects applied"),
-    ]);
-
-    let status = gtk::Label::builder()
-        .label("Connecting…")
-        .wrap(true)
-        .justify(gtk::Justification::Center)
-        .css_classes(["oe-preview-status"])
-        .build();
-
-    let problem_text = gtk::Label::builder()
-        .wrap(true)
-        .justify(gtk::Justification::Center)
-        .css_classes(["oe-preview-status"])
-        .build();
-    let retry_btn = gtk::Button::builder()
-        .label("Try Again")
-        .css_classes(["oe-pill-button"])
-        .build();
-    let restart_btn = gtk::Button::builder()
-        .label("Restart Camera Services")
-        .tooltip_text(
-            "Restarts WirePlumber and the vinoOpenEffects daemon. \
-             Other apps may briefly lose camera or audio routing.",
-        )
-        .css_classes(["oe-pill-button"])
-        .build();
-    let actions = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(10)
-        .halign(gtk::Align::Center)
-        .build();
-    actions.append(&retry_btn);
-    actions.append(&restart_btn);
-    let problem = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
-        .visible(false)
-        .build();
-    problem.append(&problem_text);
-    problem.append(&actions);
-
-    let camera_dropdown = gtk::DropDown::builder()
-        .model(&gtk::StringList::new(&["No cameras found"]))
-        .tooltip_text("Camera")
-        .halign(gtk::Align::Start)
-        .valign(gtk::Align::Start)
-        .margin_start(14)
-        .margin_top(14)
-        .css_classes(["oe-pill-dropdown"])
-        .build();
-    camera_dropdown.update_property(&[gtk::accessible::Property::Label("Camera")]);
-    let camera_handler = {
-        let cmd_tx = cmd_tx.clone();
-        camera_dropdown.connect_selected_notify(move |dd| {
-            let ids = camera_ids.borrow();
-            if let Some(id) = ids.get(dd.selected() as usize) {
-                let _ = cmd_tx.send(GuiCommand::SelectCamera { id: id.clone() });
-            }
-        })
-    };
-
-    let live_label = gtk::Label::new(Some("Virtual camera live"));
-    let live_pill = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .valign(gtk::Align::Start)
-        .margin_end(14)
-        .margin_top(14)
-        .visible(false)
-        .css_classes(["oe-pill"])
-        .build();
-    live_pill.append(
-        &gtk::Box::builder()
-            .valign(gtk::Align::Center)
-            .css_classes(["oe-live-dot"])
-            .build(),
-    );
-    live_pill.append(&live_label);
-
-    let compare_content = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(8)
-        .build();
-    compare_content.append(
-        &gtk::Image::builder()
-            .icon_name("object-flip-horizontal-symbolic")
-            .accessible_role(gtk::AccessibleRole::Presentation)
-            .build(),
-    );
-    compare_content.append(&gtk::Label::new(Some("Hold to Compare")));
-    let compare = gtk::Button::builder()
-        .child(&compare_content)
-        .tooltip_text("Hold to see your camera without effects")
-        .halign(gtk::Align::Start)
-        .valign(gtk::Align::End)
-        .margin_start(14)
-        .margin_bottom(14)
-        .css_classes(["oe-pill-button"])
-        .build();
-
-    let node_pill = gtk::Label::builder()
-        .label(VCAM_NODE_NAME)
-        .tooltip_text("Pick this camera in Zoom, OBS or your browser")
-        .halign(gtk::Align::End)
-        .valign(gtk::Align::End)
-        .margin_end(14)
-        .margin_bottom(14)
-        .css_classes(["oe-pill", "monospace"])
-        .build();
+    let picture = build_picture();
+    let status = build_status_label();
+    let ProblemNotice {
+        container: problem,
+        text: problem_text,
+        retry_btn,
+        restart_btn,
+    } = build_problem_notice();
+    let (camera_dropdown, camera_handler) = build_camera_dropdown(cmd_tx, camera_ids);
+    let (live_pill, live_label) = build_live_pill();
+    let compare = build_compare_button();
+    let node_pill = build_node_pill();
 
     let frame = gtk::Overlay::builder()
         .child(&picture)
@@ -213,37 +105,195 @@ pub fn build(cmd_tx: &CmdTx, camera_ids: Rc<RefCell<Vec<String>>>) -> Rc<Preview
         pipeline: RefCell::new(None),
     });
 
-    {
-        let weak = Rc::downgrade(&preview);
-        preview.retry_btn.connect_clicked(move |_| {
-            if let Some(preview) = weak.upgrade() {
-                preview.restart_pipeline();
-            }
-        });
-        let weak = Rc::downgrade(&preview);
-        preview.restart_btn.connect_clicked(move |_| {
-            if let Some(preview) = weak.upgrade() {
-                preview.restart_services();
-            }
-        });
-    }
-
-    {
-        let preview_map = Rc::downgrade(&preview);
-        preview.frame.connect_map(move |_| {
-            if let Some(preview) = preview_map.upgrade() {
-                preview.start();
-            }
-        });
-        let preview_unmap = Rc::downgrade(&preview);
-        preview.frame.connect_unmap(move |_| {
-            if let Some(preview) = preview_unmap.upgrade() {
-                preview.stop();
-            }
-        });
-    }
+    connect_problem_actions(&preview);
+    connect_map_lifecycle(&preview);
 
     preview
+}
+
+fn build_picture() -> gtk::Picture {
+    let picture = gtk::Picture::builder()
+        .content_fit(gtk::ContentFit::Cover)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    picture.update_property(&[
+        gtk::accessible::Property::Label("Camera preview"),
+        gtk::accessible::Property::Description("The virtual camera's output, with effects applied"),
+    ]);
+    picture
+}
+
+fn build_status_label() -> gtk::Label {
+    gtk::Label::builder()
+        .label("Connecting…")
+        .wrap(true)
+        .justify(gtk::Justification::Center)
+        .css_classes(["oe-preview-status"])
+        .build()
+}
+
+/// The centred "can't reach the virtual camera" notice and its two buttons.
+struct ProblemNotice {
+    container: gtk::Box,
+    text: gtk::Label,
+    retry_btn: gtk::Button,
+    restart_btn: gtk::Button,
+}
+
+fn build_problem_notice() -> ProblemNotice {
+    let text = gtk::Label::builder()
+        .wrap(true)
+        .justify(gtk::Justification::Center)
+        .css_classes(["oe-preview-status"])
+        .build();
+    let retry_btn = gtk::Button::builder()
+        .label("Try Again")
+        .css_classes(["oe-pill-button"])
+        .build();
+    let restart_btn = gtk::Button::builder()
+        .label("Restart Camera Services")
+        .tooltip_text(
+            "Restarts WirePlumber and the vinoOpenEffects daemon. \
+             Other apps may briefly lose camera or audio routing.",
+        )
+        .css_classes(["oe-pill-button"])
+        .build();
+    let actions = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(10)
+        .halign(gtk::Align::Center)
+        .build();
+    actions.append(&retry_btn);
+    actions.append(&restart_btn);
+    let container = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .visible(false)
+        .build();
+    container.append(&text);
+    container.append(&actions);
+    ProblemNotice {
+        container,
+        text,
+        retry_btn,
+        restart_btn,
+    }
+}
+
+fn build_camera_dropdown(
+    cmd_tx: &CmdTx,
+    camera_ids: Rc<RefCell<Vec<String>>>,
+) -> (gtk::DropDown, glib::SignalHandlerId) {
+    let camera_dropdown = gtk::DropDown::builder()
+        .model(&gtk::StringList::new(&["No cameras found"]))
+        .tooltip_text("Camera")
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::Start)
+        .margin_start(14)
+        .margin_top(14)
+        .css_classes(["oe-pill-dropdown"])
+        .build();
+    camera_dropdown.update_property(&[gtk::accessible::Property::Label("Camera")]);
+    let camera_handler = {
+        let cmd_tx = cmd_tx.clone();
+        camera_dropdown.connect_selected_notify(move |dd| {
+            let ids = camera_ids.borrow();
+            if let Some(id) = ids.get(dd.selected() as usize) {
+                let _ = cmd_tx.send(GuiCommand::SelectCamera { id: id.clone() });
+            }
+        })
+    };
+    (camera_dropdown, camera_handler)
+}
+
+fn build_live_pill() -> (gtk::Box, gtk::Label) {
+    let live_label = gtk::Label::new(Some("Virtual camera live"));
+    let live_pill = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .valign(gtk::Align::Start)
+        .margin_end(14)
+        .margin_top(14)
+        .visible(false)
+        .css_classes(["oe-pill"])
+        .build();
+    live_pill.append(
+        &gtk::Box::builder()
+            .valign(gtk::Align::Center)
+            .css_classes(["oe-live-dot"])
+            .build(),
+    );
+    live_pill.append(&live_label);
+    (live_pill, live_label)
+}
+
+fn build_compare_button() -> gtk::Button {
+    let content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    content.append(
+        &gtk::Image::builder()
+            .icon_name("object-flip-horizontal-symbolic")
+            .accessible_role(gtk::AccessibleRole::Presentation)
+            .build(),
+    );
+    content.append(&gtk::Label::new(Some("Hold to Compare")));
+    gtk::Button::builder()
+        .child(&content)
+        .tooltip_text("Hold to see your camera without effects")
+        .halign(gtk::Align::Start)
+        .valign(gtk::Align::End)
+        .margin_start(14)
+        .margin_bottom(14)
+        .css_classes(["oe-pill-button"])
+        .build()
+}
+
+fn build_node_pill() -> gtk::Label {
+    gtk::Label::builder()
+        .label(VCAM_NODE_NAME)
+        .tooltip_text("Pick this camera in Zoom, OBS or your browser")
+        .halign(gtk::Align::End)
+        .valign(gtk::Align::End)
+        .margin_end(14)
+        .margin_bottom(14)
+        .css_classes(["oe-pill", "monospace"])
+        .build()
+}
+
+fn connect_problem_actions(preview: &Rc<Preview>) {
+    let weak = Rc::downgrade(preview);
+    preview.retry_btn.connect_clicked(move |_| {
+        if let Some(preview) = weak.upgrade() {
+            preview.restart_pipeline();
+        }
+    });
+    let weak = Rc::downgrade(preview);
+    preview.restart_btn.connect_clicked(move |_| {
+        if let Some(preview) = weak.upgrade() {
+            preview.restart_services();
+        }
+    });
+}
+
+fn connect_map_lifecycle(preview: &Rc<Preview>) {
+    let preview_map = Rc::downgrade(preview);
+    preview.frame.connect_map(move |_| {
+        if let Some(preview) = preview_map.upgrade() {
+            preview.start();
+        }
+    });
+    let preview_unmap = Rc::downgrade(preview);
+    preview.frame.connect_unmap(move |_| {
+        if let Some(preview) = preview_unmap.upgrade() {
+            preview.stop();
+        }
+    });
 }
 
 impl Preview {
