@@ -43,7 +43,7 @@ pub struct Widgets {
     /// Shows the file name of a custom (non-preset) image background.
     image_row: adw::ActionRow,
     /// Built-in image backgrounds: label, on-disk path and toggle button.
-    image_presets: Vec<(&'static str, PathBuf, gtk::ToggleButton)>,
+    image_presets: Vec<ImagePreset>,
     swatches: Vec<gtk::ToggleButton>,
     custom_provider: gtk::CssProvider,
     /// Display name of the current replacement background, for the summary.
@@ -58,68 +58,122 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     install_swatch_css();
     let applying = Rc::new(Cell::new(false));
 
-    let (mode_row, mode) = {
-        let cmd_tx = cmd_tx.clone();
-        let applying = applying.clone();
-        toggle_row("Mode", "", BG_MODES, move |value| {
-            if applying.get() {
-                return;
-            }
-            set_mode(&cmd_tx, value == BG_REPLACE);
-        })
-    };
-    let (blur_row, blur_strength) = {
-        let cmd_tx = cmd_tx.clone();
-        let applying = applying.clone();
-        toggle_row("Strength", "", BLUR_LEVELS, move |value| {
-            if applying.get() {
-                return;
-            }
-            let strength: u32 = value.parse().unwrap_or(66);
-            let _ = cmd_tx.send(GuiCommand::SetParam {
-                id: "portrait_blur".into(),
-                key: "strength".into(),
-                value: shared::dbus::u32_value(strength),
-            });
-        })
-    };
+    let (mode_row, mode) = build_mode_row(cmd_tx, &applying);
+    let (blur_row, blur_strength) = build_blur_strength_row(cmd_tx, &applying);
 
-    let card = {
-        let cmd_tx = cmd_tx.clone();
-        let applying = applying.clone();
-        let mode_toggle = mode.group.clone();
-        EffectCard::new("Background", "view-conceal-symbolic", move |on| {
-            if applying.get() {
-                return;
-            }
-            if on {
-                let replace = mode_toggle.active_name().as_deref() == Some(BG_REPLACE);
-                set_mode(&cmd_tx, replace);
-            } else {
-                let _ = cmd_tx.send(GuiCommand::SetEnabled {
-                    id: "portrait_blur".into(),
-                    on: false,
-                });
-                let _ = cmd_tx.send(GuiCommand::SetEnabled {
-                    id: "bg_replace".into(),
-                    on: false,
-                });
-            }
-        })
-    };
+    let card = build_card(cmd_tx, &applying, &mode.group);
     card.add_row(&mode_row);
     card.add_row(&blur_row);
 
     let mut group_leader: Option<gtk::ToggleButton> = None;
 
+    let (images_row, image_presets) = build_images_row(cmd_tx, &applying, &mut group_leader);
+    card.add_row(&images_row);
+
+    let image_row = adw::ActionRow::builder()
+        .title("No image selected")
+        .subtitle("—")
+        .visible(false)
+        .build();
+    card.add_row(&image_row);
+
+    let (colors_row, swatches, custom_provider) =
+        build_colors_row(cmd_tx, &applying, &mut group_leader);
+    card.add_row(&colors_row);
+
+    let widgets = Widgets {
+        card,
+        mode_row,
+        mode,
+        blur_row,
+        blur_strength,
+        replace_rows: vec![images_row, colors_row],
+        image_row,
+        image_presets,
+        swatches,
+        custom_provider,
+        bg_name: RefCell::new(String::new()),
+        applying,
+        blur_enabled: Cell::new(false),
+        bg_enabled: Cell::new(false),
+    };
+    widgets.update_visibility();
+    widgets
+}
+
+fn build_mode_row(cmd_tx: &CmdTx, applying: &Rc<Cell<bool>>) -> (adw::ActionRow, ToggleCtl) {
+    let cmd_tx = cmd_tx.clone();
+    let applying = applying.clone();
+    toggle_row("Mode", "", BG_MODES, move |value| {
+        if applying.get() {
+            return;
+        }
+        set_mode(&cmd_tx, value == BG_REPLACE);
+    })
+}
+
+fn build_blur_strength_row(
+    cmd_tx: &CmdTx,
+    applying: &Rc<Cell<bool>>,
+) -> (adw::ActionRow, ToggleCtl) {
+    let cmd_tx = cmd_tx.clone();
+    let applying = applying.clone();
+    toggle_row("Strength", "", BLUR_LEVELS, move |value| {
+        if applying.get() {
+            return;
+        }
+        let strength: u32 = value.parse().unwrap_or(66);
+        let _ = cmd_tx.send(GuiCommand::SetParam {
+            id: "portrait_blur".into(),
+            key: "strength".into(),
+            value: shared::dbus::u32_value(strength),
+        });
+    })
+}
+
+fn build_card(
+    cmd_tx: &CmdTx,
+    applying: &Rc<Cell<bool>>,
+    mode_group: &adw::ToggleGroup,
+) -> EffectCard {
+    let cmd_tx = cmd_tx.clone();
+    let applying = applying.clone();
+    let mode_toggle = mode_group.clone();
+    EffectCard::new("Background", "view-conceal-symbolic", move |on| {
+        if applying.get() {
+            return;
+        }
+        if on {
+            let replace = mode_toggle.active_name().as_deref() == Some(BG_REPLACE);
+            set_mode(&cmd_tx, replace);
+        } else {
+            let _ = cmd_tx.send(GuiCommand::SetEnabled {
+                id: "portrait_blur".into(),
+                on: false,
+            });
+            let _ = cmd_tx.send(GuiCommand::SetEnabled {
+                id: "bg_replace".into(),
+                on: false,
+            });
+        }
+    })
+}
+
+type ImagePreset = (&'static str, PathBuf, gtk::ToggleButton);
+
+fn build_images_row(
+    cmd_tx: &CmdTx,
+    applying: &Rc<Cell<bool>>,
+    group_leader: &mut Option<gtk::ToggleButton>,
+) -> (gtk::ListBoxRow, Vec<ImagePreset>) {
     let image_box = wrapping_grid(5);
 
     let mut image_presets = Vec::new();
     for (label, path) in ensure_preset_images() {
         let button = image_preset_button(label, &path);
-        match &group_leader {
+        match &*group_leader {
             Some(leader) => button.set_group(Some(leader)),
-            None => group_leader = Some(button.clone()),
+            None => *group_leader = Some(button.clone()),
         }
         {
             let cmd_tx = cmd_tx.clone();
@@ -150,23 +204,22 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     }
     image_box.append(&browse);
     let images_row = plain_row(&labelled(&section_label("Images"), &image_box));
-    card.add_row(&images_row);
+    (images_row, image_presets)
+}
 
-    let image_row = adw::ActionRow::builder()
-        .title("No image selected")
-        .subtitle("—")
-        .visible(false)
-        .build();
-    card.add_row(&image_row);
-
+fn build_colors_row(
+    cmd_tx: &CmdTx,
+    applying: &Rc<Cell<bool>>,
+    group_leader: &mut Option<gtk::ToggleButton>,
+) -> (gtk::ListBoxRow, Vec<gtk::ToggleButton>, gtk::CssProvider) {
     let swatch_box = wrapping_grid(7);
 
     let mut swatches = Vec::new();
     for (i, (label, hex)) in BG_PRESETS.iter().enumerate() {
         let button = swatch_button(&format!("oe-swatch-{i}"), label);
-        match &group_leader {
+        match &*group_leader {
             Some(leader) => button.set_group(Some(leader)),
-            None => group_leader = Some(button.clone()),
+            None => *group_leader = Some(button.clone()),
         }
         {
             let cmd_tx = cmd_tx.clone();
@@ -200,26 +253,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     }
     swatch_box.append(&custom);
     let colors_row = plain_row(&labelled(&section_label("Solid Colors"), &swatch_box));
-    card.add_row(&colors_row);
-
-    let widgets = Widgets {
-        card,
-        mode_row,
-        mode,
-        blur_row,
-        blur_strength,
-        replace_rows: vec![images_row, colors_row],
-        image_row,
-        image_presets,
-        swatches,
-        custom_provider,
-        bg_name: RefCell::new(String::new()),
-        applying,
-        blur_enabled: Cell::new(false),
-        bg_enabled: Cell::new(false),
-    };
-    widgets.update_visibility();
-    widgets
+    (colors_row, swatches, custom_provider)
 }
 
 impl Widgets {
