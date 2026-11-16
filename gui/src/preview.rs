@@ -503,3 +503,179 @@ fn missing_plugin() -> Option<String> {
         "The preview needs GStreamer's {what} plugin. Install {packages}, then try again"
     ))
 }
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, run, type_names};
+
+    #[test]
+    fn the_picture_fills_the_frame_and_is_named_for_screen_readers() {
+        run(|| {
+            let picture = build_picture();
+            assert_eq!(picture.content_fit(), gtk::ContentFit::Cover);
+            assert!(picture.hexpands() && picture.vexpands());
+            assert!(gtk::test_accessible_has_property(
+                &picture,
+                gtk::AccessibleProperty::Label
+            ));
+            assert!(gtk::test_accessible_has_property(
+                &picture,
+                gtk::AccessibleProperty::Description
+            ));
+        });
+    }
+
+    #[test]
+    fn the_status_line_starts_as_connecting() {
+        run(|| {
+            let status = build_status_label();
+            assert_eq!(status.label(), "Connecting…");
+            assert!(status.wraps());
+            assert!(status.has_css_class("oe-preview-status"));
+        });
+    }
+
+    #[test]
+    fn the_problem_notice_starts_hidden_with_text_then_two_buttons() {
+        run(|| {
+            let notice = build_problem_notice();
+            assert!(!notice.container.is_visible());
+            assert_eq!(notice.container.orientation(), gtk::Orientation::Vertical);
+            assert_eq!(notice.text.label(), "");
+
+            let rows = children(&notice.container);
+            assert_eq!(type_names(&rows), ["GtkLabel", "GtkBox"]);
+            assert_eq!(rows[0], notice.text.clone().upcast::<gtk::Widget>());
+            let buttons = children(&rows[1]);
+            assert_eq!(buttons[0], notice.retry_btn.clone().upcast::<gtk::Widget>());
+            assert_eq!(
+                buttons[1],
+                notice.restart_btn.clone().upcast::<gtk::Widget>()
+            );
+            assert_eq!(notice.retry_btn.label().as_deref(), Some("Try Again"));
+            assert_eq!(
+                notice.restart_btn.label().as_deref(),
+                Some("Restart Camera Services")
+            );
+            let warning = notice.restart_btn.tooltip_text().unwrap();
+            assert!(warning.contains("WirePlumber"), "{warning}");
+        });
+    }
+
+    #[test]
+    fn the_camera_dropdown_starts_with_a_placeholder_and_is_named() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let (dropdown, _handler) = build_camera_dropdown(&tx, Rc::default());
+            assert_eq!(dropdown.model().unwrap().n_items(), 1);
+            assert_eq!(dropdown.tooltip_text().as_deref(), Some("Camera"));
+            assert!(dropdown.has_css_class("oe-pill-dropdown"));
+            assert!(gtk::test_accessible_has_property(
+                &dropdown,
+                gtk::AccessibleProperty::Label
+            ));
+        });
+    }
+
+    #[test]
+    fn picking_a_camera_sends_the_id_at_that_position() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let ids = Rc::new(RefCell::new(vec!["cam-a".to_string(), "cam-b".to_string()]));
+            let (dropdown, _handler) = build_camera_dropdown(&tx, ids);
+            dropdown.set_model(Some(&gtk::StringList::new(&["A", "B"])));
+            drain(&mut rx);
+            dropdown.set_selected(1);
+            let sent = drain(&mut rx);
+            assert!(
+                matches!(sent.last(), Some(GuiCommand::SelectCamera { id }) if id == "cam-b"),
+                "{sent:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn picking_a_camera_with_no_known_ids_sends_nothing() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (dropdown, _handler) = build_camera_dropdown(&tx, Rc::default());
+            dropdown.set_model(Some(&gtk::StringList::new(&["A", "B"])));
+            dropdown.set_selected(1);
+            assert!(drain(&mut rx).is_empty());
+        });
+    }
+
+    #[test]
+    fn the_live_pill_starts_hidden_with_a_dot_then_its_text() {
+        run(|| {
+            let (pill, label) = build_live_pill();
+            assert!(!pill.is_visible());
+            assert!(pill.has_css_class("oe-pill"));
+            let parts = children(&pill);
+            assert_eq!(type_names(&parts), ["GtkBox", "GtkLabel"]);
+            assert!(parts[0].has_css_class("oe-live-dot"));
+            assert_eq!(parts[1], label.clone().upcast::<gtk::Widget>());
+            assert_eq!(label.label(), "Virtual camera live");
+        });
+    }
+
+    #[test]
+    fn the_compare_button_names_itself_and_hides_its_icon() {
+        run(|| {
+            let button = build_compare_button();
+            assert!(button.has_css_class("oe-pill-button"));
+            assert_eq!(
+                button.tooltip_text().as_deref(),
+                Some("Hold to see your camera without effects")
+            );
+            let content = button.child().unwrap();
+            let parts = children(&content);
+            assert_eq!(type_names(&parts), ["GtkImage", "GtkLabel"]);
+            assert!(gtk::test_accessible_has_role(
+                &parts[0],
+                gtk::AccessibleRole::Presentation
+            ));
+            let text = parts[1].downcast_ref::<gtk::Label>().unwrap();
+            assert_eq!(text.label(), "Hold to Compare");
+        });
+    }
+
+    #[test]
+    fn the_node_pill_shows_the_virtual_camera_name() {
+        run(|| {
+            let pill = build_node_pill();
+            assert_eq!(pill.label(), VCAM_NODE_NAME);
+            assert!(pill.has_css_class("oe-pill") && pill.has_css_class("monospace"));
+            assert!(pill.tooltip_text().unwrap().contains("Zoom"));
+        });
+    }
+
+    #[test]
+    fn the_frame_stacks_the_picture_then_each_overlay_in_order() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let preview = build(&tx, Rc::default());
+            let layers = children(&preview.frame);
+            assert_eq!(
+                type_names(&layers),
+                [
+                    "GtkPicture",
+                    "GtkLabel",
+                    "GtkBox",
+                    "GtkDropDown",
+                    "GtkBox",
+                    "GtkButton",
+                    "GtkLabel"
+                ]
+            );
+            assert_eq!(
+                layers[3],
+                preview.camera_dropdown.clone().upcast::<gtk::Widget>()
+            );
+            assert_eq!(layers[5], preview.compare.clone().upcast::<gtk::Widget>());
+            assert_eq!(layers[6], preview.node_pill.clone().upcast::<gtk::Widget>());
+            assert!(preview.frame.has_css_class("oe-preview-frame"));
+        });
+    }
+}

@@ -720,3 +720,146 @@ fn apply_bypass(w: &Widgets, on: bool) {
     w.cards.set_sensitive(!on);
     w.preview.compare.set_sensitive(!on);
 }
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, run, type_names};
+
+    #[test]
+    fn the_cards_column_holds_the_lists_in_the_order_given() {
+        run(|| {
+            let lists: Vec<gtk::ListBox> = (0..4).map(|_| gtk::ListBox::new()).collect();
+            let refs: Vec<&gtk::ListBox> = lists.iter().collect();
+            let cards = build_cards(&refs);
+            assert_eq!(cards.orientation(), gtk::Orientation::Vertical);
+            let held = children(&cards);
+            assert_eq!(held.len(), 4);
+            for (held, list) in held.iter().zip(&lists) {
+                assert_eq!(held, list.upcast_ref::<gtk::Widget>());
+            }
+        });
+    }
+
+    #[test]
+    fn the_controls_column_scrolls_only_vertically_at_a_fixed_width() {
+        run(|| {
+            let cards = build_cards(&[]);
+            let controls = build_controls(&cards);
+            assert_eq!(controls.width_request(), CONTROLS_WIDTH);
+            assert_eq!(controls.hscrollbar_policy(), gtk::PolicyType::Never);
+            assert!(controls.vexpands());
+            let inner = controls.child().unwrap();
+            assert!(inner.first_child().is_some_and(|c| c == cards));
+        });
+    }
+
+    #[test]
+    fn placing_the_preview_frame_sets_margins_and_expands_it() {
+        run(|| {
+            let frame = gtk::Overlay::new();
+            place_preview_frame(&frame);
+            assert_eq!(
+                (
+                    frame.margin_top(),
+                    frame.margin_bottom(),
+                    frame.margin_start(),
+                    frame.margin_end()
+                ),
+                (16, 16, 16, 8)
+            );
+            assert!(frame.hexpands() && frame.vexpands());
+        });
+    }
+
+    #[test]
+    fn the_bypass_toggle_is_a_named_switch_before_its_label_and_starts_on() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let (bypass_box, switch, _handler) = build_bypass_toggle(&tx);
+            assert!(switch.is_active());
+            assert!(gtk::test_accessible_has_property(
+                &switch,
+                gtk::AccessibleProperty::Label
+            ));
+            let parts = children(&bypass_box);
+            assert_eq!(type_names(&parts), ["GtkSwitch", "GtkLabel"]);
+            let label = parts[1].downcast_ref::<gtk::Label>().unwrap();
+            assert_eq!(label.label(), "Effects");
+        });
+    }
+
+    #[test]
+    fn switching_effects_off_sends_bypass_on_and_back() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (_box, switch, _handler) = build_bypass_toggle(&tx);
+            switch.set_active(false);
+            switch.set_active(true);
+            let sent = drain(&mut rx);
+            assert!(matches!(
+                sent.as_slice(),
+                [
+                    GuiCommand::SetBypass { on: true },
+                    GuiCommand::SetBypass { on: false }
+                ]
+            ));
+        });
+    }
+
+    #[test]
+    fn the_banners_start_hidden_and_their_buttons_send_start_and_retry() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (banner, inference) = build_banners(&tx);
+            assert!(!banner.is_revealed() && !inference.is_revealed());
+            assert_eq!(banner.button_label().as_deref(), Some("Start"));
+            assert_eq!(inference.button_label().as_deref(), Some("Retry NPU"));
+            banner.emit_by_name::<()>("button-clicked", &[]);
+            inference.emit_by_name::<()>("button-clicked", &[]);
+            let sent = drain(&mut rx);
+            assert!(matches!(
+                sent.as_slice(),
+                [GuiCommand::Start, GuiCommand::RetryInference]
+            ));
+        });
+    }
+
+    #[test]
+    fn only_space_and_the_enter_keys_activate_the_compare_button() {
+        use gtk::gdk::Key;
+        for key in [Key::space, Key::Return, Key::KP_Enter] {
+            assert!(is_activate_key(key));
+        }
+        for key in [Key::Tab, Key::a, Key::Escape] {
+            assert!(!is_activate_key(key));
+        }
+    }
+
+    #[test]
+    fn effect_params_are_found_by_their_id_prefix() {
+        let state: VariantMap = [
+            (
+                "studio_light.intensity".to_string(),
+                shared::dbus::u32_value(7),
+            ),
+            (
+                "studio_light.enabled".to_string(),
+                shared::dbus::bool_value(true),
+            ),
+            (
+                "portrait_blur.strength".to_string(),
+                shared::dbus::u32_value(66),
+            ),
+            (
+                "studio_lightx.other".to_string(),
+                shared::dbus::u32_value(1),
+            ),
+        ]
+        .into();
+        let params = extract_effect_params(&state, "studio_light");
+        let mut keys: Vec<_> = params.keys().cloned().collect();
+        keys.sort();
+        assert_eq!(keys, ["enabled", "intensity"]);
+    }
+}

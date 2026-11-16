@@ -613,3 +613,167 @@ fn add_provider(provider: &gtk::CssProvider) {
         );
     }
 }
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, run};
+
+    fn applying() -> Rc<Cell<bool>> {
+        Rc::new(Cell::new(false))
+    }
+
+    fn enabled(cmd: &GuiCommand) -> (&str, bool) {
+        match cmd {
+            GuiCommand::SetEnabled { id, on } => (id.as_str(), *on),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_mode_row_offers_blur_and_replace_and_sends_both_effect_flags() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (row, mode) = build_mode_row(&tx, &applying());
+            assert_eq!(row.title(), "Mode");
+            assert_eq!(mode.group.n_toggles(), 2);
+            mode.group.set_active_name(Some(BG_REPLACE));
+            let sent = drain(&mut rx);
+            assert_eq!(sent.len(), 2);
+            assert_eq!(enabled(&sent[0]), ("bg_replace", true));
+            assert_eq!(enabled(&sent[1]), ("portrait_blur", false));
+        });
+    }
+
+    #[test]
+    fn the_mode_row_stays_quiet_while_the_daemon_state_is_applied() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let guard = applying();
+            let (_row, mode) = build_mode_row(&tx, &guard);
+            guard.set(true);
+            mode.group.set_active_name(Some(BG_REPLACE));
+            assert!(drain(&mut rx).is_empty());
+        });
+    }
+
+    #[test]
+    fn the_blur_strength_row_offers_three_levels_and_sends_the_number() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (row, strength) = build_blur_strength_row(&tx, &applying());
+            assert_eq!(row.title(), "Strength");
+            assert_eq!(strength.group.n_toggles(), BLUR_LEVELS.len() as u32);
+            strength.group.set_active_name(Some("100"));
+            let sent = drain(&mut rx);
+            match sent.as_slice() {
+                [GuiCommand::SetParam { id, key, value }] => {
+                    assert_eq!((id.as_str(), key.as_str()), ("portrait_blur", "strength"));
+                    assert_eq!(shared::dbus::value_as_u32(value), Some(100));
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn switching_the_card_on_picks_the_mode_and_off_disables_both_effects() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let guard = applying();
+            let (_row, mode) = build_mode_row(&tx, &guard);
+            let card = build_card(&tx, &guard, &mode.group);
+            drain(&mut rx);
+            let switch = card_switch(card.list.upcast_ref()).expect("card has a switch");
+            switch.set_active(true);
+            let on = drain(&mut rx);
+            assert_eq!(enabled(&on[0]), ("bg_replace", false));
+            assert_eq!(enabled(&on[1]), ("portrait_blur", true));
+            switch.set_active(false);
+            let off = drain(&mut rx);
+            assert_eq!(enabled(&off[0]), ("portrait_blur", false));
+            assert_eq!(enabled(&off[1]), ("bg_replace", false));
+        });
+    }
+
+    fn card_switch(widget: &gtk::Widget) -> Option<gtk::Switch> {
+        if let Some(switch) = widget.downcast_ref::<gtk::Switch>() {
+            return Some(switch.clone());
+        }
+        children(widget).iter().find_map(card_switch)
+    }
+
+    #[test]
+    fn the_colors_row_has_one_swatch_per_preset_in_one_radio_group() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let mut leader = None;
+            let (row, swatches, _provider) = build_colors_row(&tx, &applying(), &mut leader);
+            assert_eq!(swatches.len(), BG_PRESETS.len());
+            for (button, (label, _)) in swatches.iter().zip(BG_PRESETS) {
+                assert_eq!(button.tooltip_text().as_deref(), Some(*label));
+            }
+            assert!(row.child().is_some());
+            swatches[1].set_active(true);
+            assert!(swatches[1].is_active());
+            swatches[2].set_active(true);
+            assert!(!swatches[1].is_active(), "swatches are one radio group");
+            let sent = drain(&mut rx);
+            assert!(sent.iter().any(|c| matches!(c,
+                GuiCommand::SetParam { key, value, .. }
+                    if key == "background"
+                        && shared::dbus::value_as_string(value).as_deref() == Some(BG_PRESETS[2].1))));
+        });
+    }
+
+    #[test]
+    fn the_images_row_has_one_thumbnail_per_preset_and_shares_the_color_radio_group() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let mut leader = None;
+            let (_row, presets) = build_images_row(&tx, &applying(), &mut leader);
+            assert_eq!(presets.len(), BG_IMAGE_PRESETS.len());
+            for ((label, path, button), (want, _, _)) in presets.iter().zip(BG_IMAGE_PRESETS) {
+                assert_eq!(label, want);
+                assert!(path.exists(), "{path:?} was not written");
+                assert_eq!(button.tooltip_text().as_deref(), Some(*label));
+            }
+            let (_colors, swatches, _p) = build_colors_row(&tx, &applying(), &mut leader);
+            presets[0].2.set_active(true);
+            swatches[0].set_active(true);
+            assert!(!presets[0].2.is_active(), "one background at a time");
+            drain(&mut rx);
+        });
+    }
+
+    #[test]
+    fn the_whole_card_starts_in_blur_mode_with_the_replace_rows_hidden() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let widgets = build(&tx);
+            assert!(widgets.replace_rows.iter().all(|r| !r.is_visible()));
+            assert!(!widgets.image_row.is_visible());
+            assert_eq!(widgets.image_row.title(), "No image selected");
+            assert_eq!(widgets.current_mode(), BG_BLUR);
+            assert_eq!(widgets.swatches.len(), BG_PRESETS.len());
+            assert_eq!(widgets.image_presets.len(), BG_IMAGE_PRESETS.len());
+        });
+    }
+
+    #[test]
+    fn the_nearest_blur_level_rounds_to_a_toggle_name() {
+        assert_eq!(nearest_blur_level(0), "33");
+        assert_eq!(nearest_blur_level(50), "66");
+        assert_eq!(nearest_blur_level(66), "66");
+        assert_eq!(nearest_blur_level(90), "100");
+        assert_eq!(nearest_blur_level(500), "100");
+    }
+
+    #[test]
+    fn a_colour_is_written_as_lowercase_hex() {
+        run(|| {
+            assert_eq!(rgba_to_hex(&RGBA::new(1.0, 0.0, 0.5, 1.0)), "#ff0080");
+            assert_eq!(rgba_to_hex(&RGBA::new(2.0, -1.0, 0.0, 1.0)), "#ff0000");
+        });
+    }
+}

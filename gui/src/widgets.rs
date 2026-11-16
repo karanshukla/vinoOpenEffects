@@ -399,3 +399,152 @@ pub fn pref_group(title: &str, description: &str) -> adw::PreferencesGroup {
         .description(description)
         .build()
 }
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, children, drain, pump, run, type_names};
+
+    fn body(subtitle: &str, min: f64, max: f64) -> (gtk::Box, gtk::Scale, gtk::SpinButton) {
+        let adjustment = gtk::Adjustment::new(min, min, max, 1.0, 10.0, 0.0);
+        build_slider_body("Intensity", subtitle, &adjustment, min, max, 1.0)
+    }
+
+    #[test]
+    fn a_slider_without_a_subtitle_is_a_title_line_then_the_scale() {
+        run(|| {
+            let (body, scale, spin) = body("", 0.0, 100.0);
+            let parts = children(&body);
+            assert_eq!(type_names(&parts), ["GtkBox", "GtkScale"]);
+            assert_eq!(parts[1], scale.clone().upcast::<gtk::Widget>());
+            let header = children(&parts[0]);
+            assert_eq!(type_names(&header), ["GtkLabel", "GtkSpinButton"]);
+            let title = header[0].downcast_ref::<gtk::Label>().unwrap();
+            assert_eq!(title.label(), "Intensity");
+            assert_eq!(header[1], spin.upcast::<gtk::Widget>());
+            assert_eq!(body.orientation(), gtk::Orientation::Vertical);
+        });
+    }
+
+    #[test]
+    fn a_slider_subtitle_sits_between_the_title_line_and_the_scale() {
+        run(|| {
+            let (body, scale, _spin) = body("Darken the room", 0.0, 100.0);
+            let parts = children(&body);
+            assert_eq!(type_names(&parts), ["GtkBox", "GtkLabel", "GtkScale"]);
+            let sub = parts[1].downcast_ref::<gtk::Label>().unwrap();
+            assert_eq!(sub.label(), "Darken the room");
+            assert!(sub.has_css_class("dim-label") && sub.has_css_class("caption"));
+            assert!(gtk::test_accessible_has_relation(
+                &scale,
+                gtk::AccessibleRelation::DescribedBy
+            ));
+        });
+    }
+
+    #[test]
+    fn the_scale_and_spin_button_are_named_by_the_title() {
+        run(|| {
+            let (_body, scale, spin) = body("", 0.0, 100.0);
+            for widget in [scale.upcast_ref::<gtk::Widget>(), spin.upcast_ref()] {
+                assert!(gtk::test_accessible_has_relation(
+                    widget,
+                    gtk::AccessibleRelation::LabelledBy
+                ));
+            }
+        });
+    }
+
+    #[test]
+    fn the_scale_and_spin_button_share_one_adjustment() {
+        run(|| {
+            let adjustment = gtk::Adjustment::new(0.0, 0.0, 100.0, 1.0, 10.0, 0.0);
+            let (_body, scale, spin) =
+                build_slider_body("Contrast", "", &adjustment, 0.0, 100.0, 1.0);
+            adjustment.set_value(42.0);
+            assert_eq!(scale.value(), 42.0);
+            assert_eq!(spin.value(), 42.0);
+            assert_eq!(spin.digits(), 0);
+            assert!(spin.is_numeric());
+            assert!(!scale.draws_value());
+        });
+    }
+
+    #[test]
+    fn a_burst_of_slider_moves_sends_one_set_param_with_the_last_value() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (_row, ctl) = slider_row_u32(
+                "Intensity",
+                "",
+                0.0,
+                100.0,
+                1.0,
+                "studio_light",
+                "intensity",
+                &tx,
+            );
+            for v in [10.0, 20.0, 30.0] {
+                ctl.adjustment.set_value(v);
+            }
+            assert!(drain(&mut rx).is_empty(), "sent before the debounce");
+            pump(400);
+            let sent = drain(&mut rx);
+            assert_eq!(sent.len(), 1, "{sent:?}");
+            match &sent[0] {
+                GuiCommand::SetParam { id, key, value } => {
+                    assert_eq!((id.as_str(), key.as_str()), ("studio_light", "intensity"));
+                    assert_eq!(shared::dbus::value_as_u32(value), Some(30));
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn a_signed_slider_sends_a_negative_value() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (_row, ctl) = slider_row_i32(
+                "Brightness",
+                "",
+                -100.0,
+                100.0,
+                1.0,
+                "studio_light",
+                "brightness",
+                &tx,
+            );
+            ctl.adjustment.set_value(-25.0);
+            pump(400);
+            let sent = drain(&mut rx);
+            match sent.as_slice() {
+                [GuiCommand::SetParam { value, .. }] => {
+                    assert_eq!(shared::dbus::value_as_i32(value), Some(-25));
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        });
+    }
+
+    #[test]
+    fn setting_a_slider_from_the_daemon_does_not_send_it_back() {
+        run(|| {
+            let (tx, mut rx) = channel_pair();
+            let (_row, ctl) = slider_row_u32(
+                "Intensity",
+                "",
+                0.0,
+                100.0,
+                1.0,
+                "studio_light",
+                "intensity",
+                &tx,
+            );
+            ctl.set_value(60.0);
+            pump(300);
+            assert_eq!(ctl.adjustment.value(), 60.0);
+            assert!(drain(&mut rx).is_empty());
+        });
+    }
+}
