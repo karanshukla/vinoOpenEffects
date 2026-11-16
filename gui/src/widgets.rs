@@ -135,13 +135,36 @@ fn slider_row(
 ) -> (gtk::ListBoxRow, SliderCtl) {
     let adjustment = gtk::Adjustment::new(min, min, max, step, step * 10.0, 0.0);
 
+    let (body, scale, spin) = build_slider_body(title, subtitle, &adjustment, min, max, step);
+    let (handler, last_input) = connect_debounced_param(&adjustment, id, key, cmd_tx, to_value);
+
+    (
+        plain_row(&body),
+        SliderCtl {
+            adjustment,
+            scale,
+            spin,
+            handler,
+            last_input,
+        },
+    )
+}
+
+fn build_slider_body(
+    title: &str,
+    subtitle: &str,
+    adjustment: &gtk::Adjustment,
+    min: f64,
+    max: f64,
+    step: f64,
+) -> (gtk::Box, gtk::Scale, gtk::SpinButton) {
     let title_label = gtk::Label::builder()
         .label(title)
         .xalign(0.0)
         .hexpand(true)
         .build();
     let spin = gtk::SpinButton::builder()
-        .adjustment(&adjustment)
+        .adjustment(adjustment)
         .climb_rate(step)
         .digits(0)
         .numeric(true)
@@ -156,7 +179,7 @@ fn slider_row(
 
     let scale = gtk::Scale::builder()
         .orientation(gtk::Orientation::Horizontal)
-        .adjustment(&adjustment)
+        .adjustment(adjustment)
         .digits(0)
         .draw_value(false)
         .hexpand(true)
@@ -189,6 +212,16 @@ fn slider_row(
     }
     body.append(&scale);
 
+    (body, scale, spin)
+}
+
+fn connect_debounced_param(
+    adjustment: &gtk::Adjustment,
+    id: &'static str,
+    key: &'static str,
+    cmd_tx: &CmdTx,
+    to_value: impl Fn(f64) -> zvariant::OwnedValue + 'static,
+) -> (glib::SignalHandlerId, Rc<Cell<Option<Instant>>>) {
     let cmd_tx = cmd_tx.clone();
     let last_input: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
     let pending: Rc<Cell<Option<glib::SourceId>>> = Rc::new(Cell::new(None));
@@ -215,17 +248,7 @@ fn slider_row(
             )));
         })
     };
-
-    (
-        plain_row(&body),
-        SliderCtl {
-            adjustment,
-            scale,
-            spin,
-            handler,
-            last_input,
-        },
-    )
+    (handler, last_input)
 }
 
 /// A slider row reporting an unsigned integer `SetParam`.
