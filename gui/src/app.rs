@@ -57,33 +57,16 @@ pub fn build_window(
     let rx_widgets = reactions::build(&cmd_tx);
     bg_widgets.card.set_expanded(true);
 
-    let cards = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(10)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(8)
-        .margin_end(16)
-        .build();
-    cards.append(&cs_widgets.card.list);
-    cards.append(&bg_widgets.card.list);
-    cards.append(&sl_widgets.card.list);
-    cards.append(&rx_widgets.card.list);
-
-    let controls = gtk::ScrolledWindow::builder()
-        .hscrollbar_policy(gtk::PolicyType::Never)
-        .width_request(CONTROLS_WIDTH)
-        .vexpand(true)
-        .child(&cards)
-        .build();
+    let cards = build_cards(&[
+        &cs_widgets.card.list,
+        &bg_widgets.card.list,
+        &sl_widgets.card.list,
+        &rx_widgets.card.list,
+    ]);
+    let controls = build_controls(&cards);
 
     let preview = preview::build(&cmd_tx, Rc::clone(&prefs_widgets.camera_ids));
-    preview.frame.set_margin_top(16);
-    preview.frame.set_margin_bottom(16);
-    preview.frame.set_margin_start(16);
-    preview.frame.set_margin_end(8);
-    preview.frame.set_hexpand(true);
-    preview.frame.set_vexpand(true);
+    place_preview_frame(&preview.frame);
 
     let body = gtk::Box::builder()
         .orientation(gtk::Orientation::Horizontal)
@@ -93,55 +76,13 @@ pub fn build_window(
 
     let menu_button = build_primary_menu();
 
-    let bypass_label = gtk::Label::builder()
-        .label("Effects")
-        .css_classes(["heading"])
-        .build();
-    let bypass_switch = gtk::Switch::builder()
-        .valign(gtk::Align::Center)
-        .active(true)
-        .tooltip_text("Toggle all effects. Off passes the camera through untouched.")
-        .build();
-    bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
-    let bypass_handler = {
-        let cmd_tx = cmd_tx.clone();
-        bypass_switch.connect_active_notify(move |sw| {
-            let _ = cmd_tx.send(GuiCommand::SetBypass {
-                on: !sw.is_active(),
-            });
-        })
-    };
-    let bypass_box = gtk::Box::builder()
-        .orientation(gtk::Orientation::Horizontal)
-        .spacing(10)
-        .build();
-    bypass_box.append(&bypass_switch);
-    bypass_box.append(&bypass_label);
+    let (bypass_box, bypass_switch, bypass_handler) = build_bypass_toggle(&cmd_tx);
 
     let header = adw::HeaderBar::new();
     header.pack_start(&bypass_box);
     header.pack_end(&menu_button);
 
-    let banner = adw::Banner::builder()
-        .revealed(false)
-        .button_label("Start")
-        .build();
-    {
-        let cmd_tx = cmd_tx.clone();
-        banner.connect_button_clicked(move |_| {
-            let _ = cmd_tx.send(GuiCommand::Start);
-        });
-    }
-    let inference_banner = adw::Banner::builder()
-        .revealed(false)
-        .button_label("Retry NPU")
-        .build();
-    {
-        let cmd_tx = cmd_tx.clone();
-        inference_banner.connect_button_clicked(move |_| {
-            let _ = cmd_tx.send(GuiCommand::RetryInference);
-        });
-    }
+    let (banner, inference_banner) = build_banners(&cmd_tx);
 
     let toolbar = adw::ToolbarView::new();
     toolbar.add_top_bar(&header);
@@ -184,25 +125,124 @@ pub fn build_window(
         comparing,
     });
 
-    let quitting = Rc::new(Cell::new(false));
+    connect_close_request(&window, &cmd_tx, &gui_config);
+    spawn_update_loop(app, update_rx, widgets);
+
+    window.present();
+}
+
+fn build_cards(lists: &[&gtk::ListBox]) -> gtk::Box {
+    let cards = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(10)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(8)
+        .margin_end(16)
+        .build();
+    for list in lists {
+        cards.append(*list);
+    }
+    cards
+}
+
+fn build_controls(cards: &gtk::Box) -> gtk::ScrolledWindow {
+    gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .width_request(CONTROLS_WIDTH)
+        .vexpand(true)
+        .child(cards)
+        .build()
+}
+
+fn place_preview_frame(frame: &gtk::Overlay) {
+    frame.set_margin_top(16);
+    frame.set_margin_bottom(16);
+    frame.set_margin_start(16);
+    frame.set_margin_end(8);
+    frame.set_hexpand(true);
+    frame.set_vexpand(true);
+}
+
+fn build_bypass_toggle(cmd_tx: &CmdTx) -> (gtk::Box, gtk::Switch, glib::SignalHandlerId) {
+    let bypass_label = gtk::Label::builder()
+        .label("Effects")
+        .css_classes(["heading"])
+        .build();
+    let bypass_switch = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(true)
+        .tooltip_text("Toggle all effects. Off passes the camera through untouched.")
+        .build();
+    bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
+    let bypass_handler = {
+        let cmd_tx = cmd_tx.clone();
+        bypass_switch.connect_active_notify(move |sw| {
+            let _ = cmd_tx.send(GuiCommand::SetBypass {
+                on: !sw.is_active(),
+            });
+        })
+    };
+    let bypass_box = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .spacing(10)
+        .build();
+    bypass_box.append(&bypass_switch);
+    bypass_box.append(&bypass_label);
+    (bypass_box, bypass_switch, bypass_handler)
+}
+
+fn build_banners(cmd_tx: &CmdTx) -> (adw::Banner, adw::Banner) {
+    let banner = adw::Banner::builder()
+        .revealed(false)
+        .button_label("Start")
+        .build();
     {
         let cmd_tx = cmd_tx.clone();
-        let gui_config = Rc::clone(&gui_config);
-        let quitting = Rc::clone(&quitting);
-        window.connect_close_request(move |_| {
-            if quitting.get() {
-                return glib::Propagation::Proceed;
-            }
-            let keep_running = gui_config.borrow().keep_running_in_background;
-            if keep_running || shared::systemd::is_enabled() {
-                return glib::Propagation::Proceed;
-            }
-            quitting.set(true);
-            let _ = cmd_tx.send(GuiCommand::QuitDaemon);
-            glib::Propagation::Stop
+        banner.connect_button_clicked(move |_| {
+            let _ = cmd_tx.send(GuiCommand::Start);
         });
     }
+    let inference_banner = adw::Banner::builder()
+        .revealed(false)
+        .button_label("Retry NPU")
+        .build();
+    {
+        let cmd_tx = cmd_tx.clone();
+        inference_banner.connect_button_clicked(move |_| {
+            let _ = cmd_tx.send(GuiCommand::RetryInference);
+        });
+    }
+    (banner, inference_banner)
+}
 
+fn connect_close_request(
+    window: &ApplicationWindow,
+    cmd_tx: &CmdTx,
+    gui_config: &Rc<RefCell<GuiConfig>>,
+) {
+    let quitting = Rc::new(Cell::new(false));
+    let cmd_tx = cmd_tx.clone();
+    let gui_config = Rc::clone(gui_config);
+    window.connect_close_request(move |_| {
+        if quitting.get() {
+            return glib::Propagation::Proceed;
+        }
+        let keep_running = gui_config.borrow().keep_running_in_background;
+        if keep_running || shared::systemd::is_enabled() {
+            return glib::Propagation::Proceed;
+        }
+        quitting.set(true);
+        let _ = cmd_tx.send(GuiCommand::QuitDaemon);
+        glib::Propagation::Stop
+    });
+}
+
+fn spawn_update_loop(
+    app: &adw::Application,
+    update_rx: async_channel::Receiver<UiUpdate>,
+    widgets: Rc<Widgets>,
+) {
     let loop_app = app.clone();
     glib::MainContext::default().spawn_local(async move {
         while let Ok(update) = update_rx.recv().await {
@@ -215,8 +255,6 @@ pub fn build_window(
             apply_update(&widgets, update);
         }
     });
-
-    window.present();
 }
 
 /// Press-and-hold on `button` (or holding Space/Enter while it has focus)
