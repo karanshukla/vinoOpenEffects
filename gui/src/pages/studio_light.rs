@@ -36,16 +36,36 @@ pub struct Widgets {
 const AUTO_LIGHT_SUBTITLE: &str = "A low-light model that brightens a dim room";
 const AUTO_LIGHT_NO_NPU: &str = "Needs an Intel NPU";
 
-pub fn build(cmd_tx: &CmdTx) -> Widgets {
-    let card = {
+fn build_card(cmd_tx: &CmdTx) -> EffectCard {
+    let cmd_tx = cmd_tx.clone();
+    EffectCard::new("Studio Light", "display-brightness-symbolic", move |on| {
+        let _ = cmd_tx.send(GuiCommand::SetEnabled {
+            id: "studio_light".into(),
+            on,
+        });
+    })
+}
+
+fn build_auto_light_switch(cmd_tx: &CmdTx) -> (adw::SwitchRow, gtk::glib::SignalHandlerId) {
+    let auto_light = adw::SwitchRow::builder()
+        .title("Brighten Dark Frames")
+        .subtitle(AUTO_LIGHT_NO_NPU)
+        .build();
+    let handler = {
         let cmd_tx = cmd_tx.clone();
-        EffectCard::new("Studio Light", "display-brightness-symbolic", move |on| {
-            let _ = cmd_tx.send(GuiCommand::SetEnabled {
+        auto_light.connect_active_notify(move |row| {
+            let _ = cmd_tx.send(GuiCommand::SetParam {
                 id: "studio_light".into(),
-                on,
+                key: "auto_light".into(),
+                value: bool_value(row.is_active()),
             });
         })
     };
+    (auto_light, handler)
+}
+
+pub fn build(cmd_tx: &CmdTx) -> Widgets {
+    let card = build_card(cmd_tx);
 
     let on_you = plain_row(&section_label("On You"));
     let (intensity_row, intensity) = slider_row_u32(
@@ -79,20 +99,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         cmd_tx,
     );
     let auto_section = plain_row(&section_label("Auto Light"));
-    let auto_light = adw::SwitchRow::builder()
-        .title("Brighten Dark Frames")
-        .subtitle(AUTO_LIGHT_NO_NPU)
-        .build();
-    let auto_light_handler = {
-        let cmd_tx = cmd_tx.clone();
-        auto_light.connect_active_notify(move |row| {
-            let _ = cmd_tx.send(GuiCommand::SetParam {
-                id: "studio_light".into(),
-                key: "auto_light".into(),
-                value: bool_value(row.is_active()),
-            });
-        })
-    };
+    let (auto_light, auto_light_handler) = build_auto_light_switch(cmd_tx);
     let (auto_strength_row, auto_strength) = slider_row_u32(
         "Strength",
         "",
