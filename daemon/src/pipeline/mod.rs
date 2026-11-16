@@ -338,13 +338,14 @@ fn worker_loop(
             None => {}
         }
 
-        if consumer_streaming && let Some(c) = capture.as_ref() {
-            if let Some(quiet) = stalled_for(bridge.age(), c.age()) {
-                let _ = capture_tx.send(WorkerMsg::CaptureFailed {
-                    id: c.id(),
-                    error: format!("no frame from the camera for {}s", quiet.as_secs()),
-                });
-            }
+        if consumer_streaming
+            && let Some(c) = capture.as_ref()
+            && let Some(quiet) = stalled_for(bridge.age(), c.age())
+        {
+            let _ = capture_tx.send(WorkerMsg::CaptureFailed {
+                id: c.id(),
+                error: format!("no frame from the camera for {}s", quiet.as_secs()),
+            });
         }
 
         if let Some(at) = retry_at
