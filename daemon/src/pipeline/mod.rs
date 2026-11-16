@@ -186,10 +186,7 @@ fn worker_loop(
     loop {
         let watchdog =
             (consumer_streaming && capture.is_some()).then(|| Instant::now() + STALL_CHECK);
-        let wake = [stop_deadline, retry_at, watchdog]
-            .into_iter()
-            .flatten()
-            .min();
+        let wake = earliest([stop_deadline, retry_at, watchdog]);
         let msg = match wake {
             Some(deadline) => {
                 match inbox.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
@@ -342,8 +339,7 @@ fn worker_loop(
         }
 
         if consumer_streaming && let Some(c) = capture.as_ref() {
-            let quiet = bridge.age().map_or(c.age(), |a| a.min(c.age()));
-            if quiet >= CAPTURE_STALL {
+            if let Some(quiet) = stalled_for(bridge.age(), c.age()) {
                 let _ = capture_tx.send(WorkerMsg::CaptureFailed {
                     id: c.id(),
                     error: format!("no frame from the camera for {}s", quiet.as_secs()),
@@ -374,8 +370,9 @@ fn worker_loop(
             }
         }
 
-        // A consumer is waiting but there's no camera (it failed to open or died mid-stream).
-        if consumer_streaming && capture.is_none() && stored_app.is_some() && retry_at.is_none() {
+        if retry_at.is_none()
+            && consumer_lacks_camera(consumer_streaming, capture.is_some(), stored_app.is_some())
+        {
             retry_at = Some(Instant::now() + CAPTURE_RETRY);
         }
 
@@ -395,6 +392,21 @@ fn worker_loop(
             }
         }
     }
+}
+
+fn earliest(deadlines: [Option<Instant>; 3]) -> Option<Instant> {
+    deadlines.into_iter().flatten().min()
+}
+
+/// How long the camera has delivered nothing, once that reaches `CAPTURE_STALL`.
+fn stalled_for(last_frame_age: Option<Duration>, capture_age: Duration) -> Option<Duration> {
+    let quiet = last_frame_age.map_or(capture_age, |a| a.min(capture_age));
+    (quiet >= CAPTURE_STALL).then_some(quiet)
+}
+
+/// A consumer is waiting but the camera failed to open or died mid-stream.
+fn consumer_lacks_camera(consumer_streaming: bool, capturing: bool, started: bool) -> bool {
+    consumer_streaming && !capturing && started
 }
 
 fn spawn_provider(
@@ -445,5 +457,53 @@ fn start_capture(
             error!(%err, "capture start failed");
             let _ = events.blocking_send(PipelineEvent::Error(err.to_string()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const JUST_UNDER_STALL: Duration = CAPTURE_STALL.saturating_sub(Duration::from_millis(1));
+
+    #[test]
+    fn the_worker_wakes_for_the_earliest_pending_deadline() {
+        let now = Instant::now();
+        let later = now + Duration::from_secs(1);
+        assert_eq!(earliest([Some(later), None, Some(now)]), Some(now));
+        assert_eq!(earliest([None, Some(later), None]), Some(later));
+    }
+
+    #[test]
+    fn the_worker_blocks_without_a_timeout_when_nothing_is_pending() {
+        assert_eq!(earliest([None, None, None]), None);
+    }
+
+    #[test]
+    fn a_capture_quiet_for_the_stall_limit_has_stalled() {
+        assert_eq!(
+            stalled_for(Some(CAPTURE_STALL), CAPTURE_STALL * 2),
+            Some(CAPTURE_STALL)
+        );
+        assert_eq!(stalled_for(Some(JUST_UNDER_STALL), CAPTURE_STALL * 2), None);
+    }
+
+    #[test]
+    fn a_capture_younger_than_the_stall_limit_has_not_stalled_on_an_old_frame() {
+        assert_eq!(stalled_for(Some(CAPTURE_STALL * 2), JUST_UNDER_STALL), None);
+    }
+
+    #[test]
+    fn a_capture_that_never_delivered_a_frame_stalls_on_its_own_age() {
+        assert_eq!(stalled_for(None, CAPTURE_STALL), Some(CAPTURE_STALL));
+        assert_eq!(stalled_for(None, JUST_UNDER_STALL), None);
+    }
+
+    #[test]
+    fn only_a_streaming_consumer_of_a_started_daemon_with_no_capture_lacks_a_camera() {
+        assert!(consumer_lacks_camera(true, false, true));
+        assert!(!consumer_lacks_camera(false, false, true));
+        assert!(!consumer_lacks_camera(true, true, true));
+        assert!(!consumer_lacks_camera(true, false, false));
     }
 }

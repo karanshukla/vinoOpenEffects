@@ -83,7 +83,7 @@ fn run_inner(
     let (tick_tx, tick_rx) = pw::channel::channel::<()>();
     let (tick_gate, gate_rx) = std::sync::mpsc::channel::<bool>();
     spawn_tick_thread(
-        Duration::from_nanos(1_000_000_000 / fmt.fps as u64),
+        Duration::from_nanos(frame_duration_ns(fmt)),
         gate_rx,
         tick_tx,
     );
@@ -117,29 +117,23 @@ fn run_inner(
         .state_changed(|_stream, ud, old, new| {
             use pw::stream::StreamState;
             info!(?old, ?new, "provide node state changed");
-            match new {
-                StreamState::Streaming => {
-                    let _ = ud.tick_gate.send(true);
-                    let _ = ud.capture_tx.send(WorkerMsg::Capture(CaptureCmd::Start));
-                }
-                StreamState::Paused => {
-                    if !ud.announced {
-                        ud.announced = true;
-                        let _ = ud
-                            .events
-                            .blocking_send(PipelineEvent::VirtualCameraVerified {
-                                node_name: PIPEWIRE_NODE_NAME.into(),
-                                found: true,
-                            });
-                    }
-                    let _ = ud.tick_gate.send(false);
-                    let _ = ud.capture_tx.send(WorkerMsg::Capture(CaptureCmd::Stop));
-                }
-                StreamState::Unconnected | StreamState::Error(_) => {
-                    let _ = ud.tick_gate.send(false);
-                    let _ = ud.capture_tx.send(WorkerMsg::Capture(CaptureCmd::Stop));
-                }
-                StreamState::Connecting => {}
+            if matches!(new, StreamState::Paused) && !ud.announced {
+                ud.announced = true;
+                let _ = ud
+                    .events
+                    .blocking_send(PipelineEvent::VirtualCameraVerified {
+                        node_name: PIPEWIRE_NODE_NAME.into(),
+                        found: true,
+                    });
+            }
+            if let Some(streaming) = consumer_streaming(&new) {
+                let capture = if streaming {
+                    CaptureCmd::Start
+                } else {
+                    CaptureCmd::Stop
+                };
+                let _ = ud.tick_gate.send(streaming);
+                let _ = ud.capture_tx.send(WorkerMsg::Capture(capture));
             }
         })
         .param_changed(|stream, ud, id, param| {
@@ -189,7 +183,6 @@ fn run_inner(
             }
 
             if let Some(header) = buffer.find_meta::<spa::buffer::meta::MetaHeader>() {
-                let frame_duration_ns = 1_000_000_000u64 / ud.fmt.fps as u64;
                 let h = header as *const spa::buffer::meta::MetaHeader
                     as *mut pw::spa::sys::spa_meta_header;
                 // SAFETY: the producer owns the buffer's shared meta region for this cycle;
@@ -197,7 +190,7 @@ fn run_inner(
                 unsafe {
                     (*h).flags = 0;
                     (*h).offset = 0;
-                    (*h).pts = (ud.frame_count * frame_duration_ns) as i64;
+                    (*h).pts = (ud.frame_count * frame_duration_ns(ud.fmt)) as i64;
                     (*h).dts_offset = 0;
                     (*h).seq = ud.frame_count;
                 }
@@ -239,6 +232,20 @@ fn run_inner(
     mainloop.run();
     info!("provide node loop exited");
     Ok(())
+}
+
+/// Whether a consumer is streaming in this state; `None` while it has yet to settle.
+fn consumer_streaming(state: &pw::stream::StreamState) -> Option<bool> {
+    use pw::stream::StreamState;
+    match state {
+        StreamState::Streaming => Some(true),
+        StreamState::Paused | StreamState::Unconnected | StreamState::Error(_) => Some(false),
+        StreamState::Connecting => None,
+    }
+}
+
+fn frame_duration_ns(fmt: PipelineFormat) -> u64 {
+    1_000_000_000 / fmt.fps as u64
 }
 
 /// Sends a tick every `interval` while the gate is open and blocks while it is
@@ -416,5 +423,69 @@ fn fill_black_i420(buf: &mut [u8], fmt: PipelineFormat) {
         for b in &mut buf[y_end..end] {
             *b = 128;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pw::stream::StreamState;
+
+    const TINY: PipelineFormat = PipelineFormat {
+        width: 4,
+        height: 2,
+        fps: 30,
+    };
+
+    #[test]
+    fn only_a_streaming_node_opens_the_camera() {
+        assert_eq!(consumer_streaming(&StreamState::Streaming), Some(true));
+    }
+
+    #[test]
+    fn a_paused_unconnected_or_failed_node_closes_the_camera() {
+        for state in [
+            StreamState::Paused,
+            StreamState::Unconnected,
+            StreamState::Error("gone".into()),
+        ] {
+            assert_eq!(consumer_streaming(&state), Some(false));
+        }
+    }
+
+    #[test]
+    fn a_connecting_node_leaves_the_camera_as_it_is() {
+        assert_eq!(consumer_streaming(&StreamState::Connecting), None);
+    }
+
+    #[test]
+    fn a_frame_lasts_a_whole_number_of_nanoseconds_at_the_advertised_rate() {
+        assert_eq!(frame_duration_ns(TINY), 33_333_333);
+        assert_eq!(
+            frame_duration_ns(PipelineFormat { fps: 60, ..TINY }),
+            16_666_666
+        );
+    }
+
+    #[test]
+    fn black_is_limited_range_luma_then_neutral_chroma() {
+        let mut frame = vec![0u8; TINY.frame_size()];
+        fill_black_i420(&mut frame, TINY);
+        assert_eq!(frame, [16, 16, 16, 16, 16, 16, 16, 16, 128, 128, 128, 128]);
+    }
+
+    #[test]
+    fn black_fills_only_as_far_as_a_short_or_long_buffer_allows() {
+        let mut short = vec![0u8; 9];
+        fill_black_i420(&mut short, TINY);
+        assert_eq!(short, [16, 16, 16, 16, 16, 16, 16, 16, 128]);
+
+        let mut luma_only = vec![0u8; 8];
+        fill_black_i420(&mut luma_only, TINY);
+        assert_eq!(luma_only, [16; 8]);
+
+        let mut long = vec![0u8; 13];
+        fill_black_i420(&mut long, TINY);
+        assert_eq!(long[11..], [128, 0]);
     }
 }
