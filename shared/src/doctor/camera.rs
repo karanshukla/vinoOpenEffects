@@ -32,15 +32,7 @@ pub fn camera_list_verdict(cameras: &[CameraNode]) -> Check {
 
     let summary: Vec<String> = cameras
         .iter()
-        .map(|c| {
-            let class_tag = match c.class {
-                CameraClass::Rgb => "RGB",
-                CameraClass::Ir => "IR",
-                CameraClass::Metadata => "meta",
-                CameraClass::Unknown => "unknown",
-            };
-            format!("{} [{class_tag}]", c.path)
-        })
+        .map(|c| format!("{} [{}]", c.path, class_tag(c.class)))
         .collect();
 
     Check::new(
@@ -52,38 +44,20 @@ pub fn camera_list_verdict(cameras: &[CameraNode]) -> Check {
     )
 }
 
+fn class_tag(class: CameraClass) -> &'static str {
+    match class {
+        CameraClass::Rgb => "RGB",
+        CameraClass::Ir => "IR",
+        CameraClass::Metadata => "meta",
+        CameraClass::Unknown => "unknown",
+    }
+}
+
 pub fn selected_camera_verdict(selected: &str, cameras: &[CameraNode]) -> Check {
     let rgb_alt = cameras.iter().find(|c| c.class == CameraClass::Rgb);
 
     if selected.is_empty() {
-        return match rgb_alt {
-            Some(rgb) => Check::new(
-                "camera",
-                "selected",
-                Status::Ok,
-                format!("auto-select (picks RGB camera {})", rgb.path),
-                None,
-            ),
-            None => {
-                if cameras.is_empty() {
-                    Check::new(
-                        "camera",
-                        "selected",
-                        Status::Fail,
-                        "no camera available to auto-select",
-                        Some("connect a USB or integrated webcam".into()),
-                    )
-                } else {
-                    Check::new(
-                        "camera",
-                        "selected",
-                        Status::Warn,
-                        "auto-select found no RGB cameras (only IR/metadata nodes present)",
-                        None,
-                    )
-                }
-            }
-        };
+        return auto_select_verdict(rgb_alt, cameras.is_empty());
     }
 
     let found = cameras
@@ -91,60 +65,111 @@ pub fn selected_camera_verdict(selected: &str, cameras: &[CameraNode]) -> Check 
         .find(|c| c.path == selected || c.name == selected);
 
     match found {
-        Some(node) => match node.class {
-            CameraClass::Rgb => Check::new(
-                "camera",
-                "selected",
-                Status::Ok,
-                format!("{} ({}) is RGB", node.path, node.name),
-                None,
-            ),
-            CameraClass::Ir => {
-                let fix = rgb_alt.map(|alt| format!("vinoopeneffects-ctl camera {}", alt.path));
-                let detail = match rgb_alt {
-                    Some(alt) => format!(
-                        "{} is an IR camera (greyscale); prefer RGB alternative ({})",
-                        node.path, alt.path
-                    ),
-                    None => format!(
-                        "{} is an IR camera (greyscale); no RGB alternative detected",
-                        node.path
-                    ),
-                };
-                Check::new("camera", "selected", Status::Warn, detail, fix)
-            }
-            CameraClass::Metadata => {
-                let fix = rgb_alt.map(|alt| format!("vinoopeneffects-ctl camera {}", alt.path));
-                Check::new(
-                    "camera",
-                    "selected",
-                    Status::Fail,
-                    format!(
-                        "{} is a metadata node, not a video capture device",
-                        node.path
-                    ),
-                    fix,
-                )
-            }
-            CameraClass::Unknown => Check::new(
-                "camera",
-                "selected",
-                Status::Warn,
-                format!(
-                    "{} has unrecognized formats ({})",
-                    node.path,
-                    node.formats.join(", ")
-                ),
-                None,
-            ),
-        },
-        None => Check::new(
-            "camera",
-            "selected",
+        Some(node) => configured_camera_verdict(node, rgb_alt),
+        None => selected_check(
             Status::Warn,
             format!("configured camera '{selected}' was not found in enumerated devices"),
             Some("vinoopeneffects-ctl camera list".into()),
         ),
+    }
+}
+
+fn selected_check(status: Status, detail: impl Into<String>, fix: Option<String>) -> Check {
+    Check::new("camera", "selected", status, detail, fix)
+}
+
+fn auto_select_verdict(rgb: Option<&CameraNode>, no_cameras: bool) -> Check {
+    match rgb {
+        Some(rgb) => selected_check(
+            Status::Ok,
+            format!("auto-select (picks RGB camera {})", rgb.path),
+            None,
+        ),
+        None if no_cameras => selected_check(
+            Status::Fail,
+            "no camera available to auto-select",
+            Some("connect a USB or integrated webcam".into()),
+        ),
+        None => selected_check(
+            Status::Warn,
+            "auto-select found no RGB cameras (only IR/metadata nodes present)",
+            None,
+        ),
+    }
+}
+
+fn configured_camera_verdict(node: &CameraNode, rgb_alt: Option<&CameraNode>) -> Check {
+    let switch_to_rgb = || rgb_alt.map(|alt| format!("vinoopeneffects-ctl camera {}", alt.path));
+    match node.class {
+        CameraClass::Rgb => selected_check(
+            Status::Ok,
+            format!("{} ({}) is RGB", node.path, node.name),
+            None,
+        ),
+        CameraClass::Ir => {
+            let detail = match rgb_alt {
+                Some(alt) => format!(
+                    "{} is an IR camera (greyscale); prefer RGB alternative ({})",
+                    node.path, alt.path
+                ),
+                None => format!(
+                    "{} is an IR camera (greyscale); no RGB alternative detected",
+                    node.path
+                ),
+            };
+            selected_check(Status::Warn, detail, switch_to_rgb())
+        }
+        CameraClass::Metadata => selected_check(
+            Status::Fail,
+            format!(
+                "{} is a metadata node, not a video capture device",
+                node.path
+            ),
+            switch_to_rgb(),
+        ),
+        CameraClass::Unknown => selected_check(
+            Status::Warn,
+            format!(
+                "{} has unrecognized formats ({})",
+                node.path,
+                node.formats.join(", ")
+            ),
+            None,
+        ),
+    }
+}
+
+const V4L2_CAP_META_CAPTURE: u32 = 0x00800000;
+const V4L2_CAP_DEVICE_CAPS: u32 = 0x80000000;
+const MAX_ENUMERATED_FORMATS: u32 = 128;
+
+fn is_meta_capture(capabilities: u32, device_caps: u32) -> bool {
+    let effective = if capabilities & V4L2_CAP_DEVICE_CAPS != 0 {
+        device_caps
+    } else {
+        capabilities
+    };
+    effective & V4L2_CAP_META_CAPTURE != 0
+}
+
+fn fourcc_name(pixelformat: u32) -> String {
+    let fourcc: String = pixelformat
+        .to_le_bytes()
+        .iter()
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '?'
+            }
+        })
+        .collect();
+    fourcc.trim().to_string()
+}
+
+fn push_distinct_format(formats: &mut Vec<String>, name: String) {
+    if !name.is_empty() && !formats.contains(&name) {
+        formats.push(name);
     }
 }
 
@@ -220,8 +245,6 @@ fn query_v4l2_caps_and_formats(device_path: &str) -> (bool, Vec<String>) {
     const VIDIOC_QUERYCAP: libc::c_ulong = 0x80685600;
     const VIDIOC_ENUM_FMT: libc::c_ulong = 0xc0405602;
     const V4L2_BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
-    const V4L2_CAP_META_CAPTURE: u32 = 0x00800000;
-    const V4L2_CAP_DEVICE_CAPS: u32 = 0x80000000;
 
     let Ok(file) = OpenOptions::new()
         .read(true)
@@ -233,15 +256,8 @@ fn query_v4l2_caps_and_formats(device_path: &str) -> (bool, Vec<String>) {
     let fd = file.as_raw_fd();
 
     let mut cap: v4l2_capability = unsafe { std::mem::zeroed() };
-    let mut is_meta = false;
-    if unsafe { libc::ioctl(fd, VIDIOC_QUERYCAP, &mut cap) } == 0 {
-        let effective = if cap.capabilities & V4L2_CAP_DEVICE_CAPS != 0 {
-            cap.device_caps
-        } else {
-            cap.capabilities
-        };
-        is_meta = (effective & V4L2_CAP_META_CAPTURE) != 0;
-    }
+    let is_meta = unsafe { libc::ioctl(fd, VIDIOC_QUERYCAP, &mut cap) } == 0
+        && is_meta_capture(cap.capabilities, cap.device_caps);
 
     let mut formats = Vec::new();
     let mut idx = 0u32;
@@ -252,24 +268,9 @@ fn query_v4l2_caps_and_formats(device_path: &str) -> (bool, Vec<String>) {
         if unsafe { libc::ioctl(fd, VIDIOC_ENUM_FMT, &mut fmt) } != 0 {
             break;
         }
-        let fourcc: String = fmt
-            .pixelformat
-            .to_le_bytes()
-            .iter()
-            .map(|&b| {
-                if b.is_ascii_graphic() || b == b' ' {
-                    b as char
-                } else {
-                    '?'
-                }
-            })
-            .collect();
-        let trimmed = fourcc.trim().to_string();
-        if !trimmed.is_empty() && !formats.contains(&trimmed) {
-            formats.push(trimmed);
-        }
+        push_distinct_format(&mut formats, fourcc_name(fmt.pixelformat));
         idx += 1;
-        if idx > 128 {
+        if idx > MAX_ENUMERATED_FORMATS {
             break;
         }
     }
@@ -285,6 +286,171 @@ pub fn probe_cameras() -> Vec<CameraNode> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn node(path: &str, class: CameraClass) -> CameraNode {
+        let formats = match class {
+            CameraClass::Rgb => vec!["YUYV".into()],
+            CameraClass::Ir => vec!["GREY".into()],
+            CameraClass::Metadata => Vec::new(),
+            CameraClass::Unknown => vec!["FOOO".into()],
+        };
+        CameraNode {
+            path: path.into(),
+            name: format!("name of {path}"),
+            class,
+            formats,
+        }
+    }
+
+    #[test]
+    fn no_cameras_fails_the_device_list() {
+        let check = camera_list_verdict(&[]);
+        assert_eq!(check.status, Status::Fail);
+        assert!(check.fix.is_some());
+    }
+
+    #[test]
+    fn one_camera_of_any_class_passes_the_device_list() {
+        let check = camera_list_verdict(&[node("/dev/video3", CameraClass::Metadata)]);
+        assert_eq!(check.status, Status::Ok);
+        assert_eq!(check.detail, "1 device(s): /dev/video3 [meta]");
+        assert_eq!(check.fix, None);
+    }
+
+    #[test]
+    fn the_device_list_tags_every_class() {
+        let cameras = [
+            node("/dev/video0", CameraClass::Rgb),
+            node("/dev/video2", CameraClass::Ir),
+            node("/dev/video4", CameraClass::Unknown),
+        ];
+        assert_eq!(
+            camera_list_verdict(&cameras).detail,
+            "3 device(s): /dev/video0 [RGB], /dev/video2 [IR], /dev/video4 [unknown]"
+        );
+    }
+
+    #[test]
+    fn auto_select_with_an_rgb_camera_is_ok() {
+        let cameras = [
+            node("/dev/video2", CameraClass::Ir),
+            node("/dev/video0", CameraClass::Rgb),
+        ];
+        let check = selected_camera_verdict("", &cameras);
+        assert_eq!(check.status, Status::Ok);
+        assert!(check.detail.contains("/dev/video0"));
+    }
+
+    #[test]
+    fn auto_select_without_an_rgb_camera_warns() {
+        let check = selected_camera_verdict("", &[node("/dev/video2", CameraClass::Ir)]);
+        assert_eq!(check.status, Status::Warn);
+        assert_eq!(check.fix, None);
+    }
+
+    #[test]
+    fn auto_select_with_no_camera_at_all_fails() {
+        let check = selected_camera_verdict("", &[]);
+        assert_eq!(check.status, Status::Fail);
+        assert!(check.fix.is_some());
+    }
+
+    #[test]
+    fn a_configured_camera_is_found_by_path_or_by_name() {
+        let cameras = [node("/dev/video0", CameraClass::Rgb)];
+        for selected in ["/dev/video0", "name of /dev/video0"] {
+            assert_eq!(
+                selected_camera_verdict(selected, &cameras).status,
+                Status::Ok
+            );
+        }
+    }
+
+    #[test]
+    fn a_configured_camera_that_is_not_enumerated_warns() {
+        let cameras = [node("/dev/video0", CameraClass::Rgb)];
+        let check = selected_camera_verdict("/dev/video9", &cameras);
+        assert_eq!(check.status, Status::Warn);
+        assert!(check.detail.contains("/dev/video9"));
+        assert_eq!(check.fix, Some("vinoopeneffects-ctl camera list".into()));
+    }
+
+    #[test]
+    fn an_ir_camera_without_an_rgb_alternative_warns_with_no_fix() {
+        let check = selected_camera_verdict("/dev/video2", &[node("/dev/video2", CameraClass::Ir)]);
+        assert_eq!(check.status, Status::Warn);
+        assert!(check.detail.contains("no RGB alternative"));
+        assert_eq!(check.fix, None);
+    }
+
+    #[test]
+    fn a_metadata_node_fails_and_offers_the_rgb_camera_when_there_is_one() {
+        let alone = [node("/dev/video1", CameraClass::Metadata)];
+        let check = selected_camera_verdict("/dev/video1", &alone);
+        assert_eq!(check.status, Status::Fail);
+        assert_eq!(check.fix, None);
+
+        let with_rgb = [
+            node("/dev/video0", CameraClass::Rgb),
+            node("/dev/video1", CameraClass::Metadata),
+        ];
+        let check = selected_camera_verdict("/dev/video1", &with_rgb);
+        assert_eq!(check.status, Status::Fail);
+        assert_eq!(
+            check.fix,
+            Some("vinoopeneffects-ctl camera /dev/video0".into())
+        );
+    }
+
+    #[test]
+    fn unrecognised_formats_warn_and_are_listed() {
+        let cameras = [
+            node("/dev/video0", CameraClass::Rgb),
+            node("/dev/video4", CameraClass::Unknown),
+        ];
+        let check = selected_camera_verdict("/dev/video4", &cameras);
+        assert_eq!(check.status, Status::Warn);
+        assert!(check.detail.contains("FOOO"));
+        assert_eq!(check.fix, None);
+    }
+
+    #[test]
+    fn device_caps_decide_meta_capture_only_when_the_driver_reports_them() {
+        let meta = V4L2_CAP_META_CAPTURE;
+        let has_device_caps = V4L2_CAP_DEVICE_CAPS;
+        assert!(is_meta_capture(has_device_caps, meta));
+        assert!(!is_meta_capture(has_device_caps | meta, 0));
+        assert!(is_meta_capture(meta, 0));
+        assert!(!is_meta_capture(0, meta));
+    }
+
+    #[test]
+    fn a_fourcc_reads_low_byte_first_and_drops_padding() {
+        assert_eq!(fourcc_name(u32::from_le_bytes(*b"MJPG")), "MJPG");
+        assert_eq!(fourcc_name(u32::from_le_bytes(*b"Y16 ")), "Y16");
+        assert_eq!(fourcc_name(u32::from_le_bytes(*b"    ")), "");
+    }
+
+    #[test]
+    fn a_fourcc_byte_outside_printable_ascii_becomes_a_question_mark() {
+        assert_eq!(
+            fourcc_name(u32::from_le_bytes([b'Y', b'~', 0x7f, 0])),
+            "Y~??"
+        );
+        assert_eq!(
+            fourcc_name(u32::from_le_bytes([b'!', 0x1f, b'8', 0x80])),
+            "!?8?"
+        );
+    }
+
+    #[test]
+    fn formats_are_listed_once_and_blank_ones_skipped() {
+        let mut formats = Vec::new();
+        for name in ["YUYV", "", "MJPG", "YUYV"] {
+            push_distinct_format(&mut formats, name.to_string());
+        }
+        assert_eq!(formats, ["YUYV", "MJPG"]);
+    }
 
     #[test]
     fn test_format_classification() {

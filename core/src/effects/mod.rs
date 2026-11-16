@@ -28,7 +28,7 @@
 //! (`SEG_INTERVAL`) with the mask reused in between, and YuNet detection on a
 //! coarser one (`FACE_INTERVAL`) — the reframe deadzone absorbs the staleness.
 //!
-//! Before any of them, a temporal denoise (see [`denoise`]) cleans the frame
+//! Before any of them, a temporal denoise (see `denoise`) cleans the frame
 //! whenever an effect would amplify its noise.
 //!
 //! 4. **Reactions** — reverse-rain emoji bursts (see [`reactions`]), composited

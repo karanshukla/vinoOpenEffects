@@ -383,6 +383,82 @@ selected = ""
         assert_eq!(std::fs::read(&path).unwrap(), before);
     }
 
+    fn mode(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o7777
+    }
+
+    #[test]
+    fn a_saved_file_has_the_mode_of_a_plainly_created_one() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plain = tmp.path().join("plain");
+        std::fs::write(&plain, "").unwrap();
+        let path = tmp.path().join("state.toml");
+
+        AppState::default().save_to(path.clone()).unwrap();
+
+        assert_eq!(mode(&path), mode(&plain));
+    }
+
+    #[test]
+    fn a_save_does_not_keep_the_replaced_files_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let plain = tmp.path().join("plain");
+        std::fs::write(&plain, "").unwrap();
+        let path = tmp.path().join("state.toml");
+        std::fs::write(&path, "").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        AppState::default().save_to(path.clone()).unwrap();
+
+        assert_eq!(mode(&path), mode(&plain));
+    }
+
+    #[test]
+    fn a_save_renames_over_the_old_file_and_never_writes_into_it() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        std::fs::write(&path, "old").unwrap();
+        let old_inode = tmp.path().join("hard-link");
+        std::fs::hard_link(&path, &old_inode).unwrap();
+
+        AppState::default().save_to(path.clone()).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&old_inode).unwrap(), "old");
+        assert_ne!(std::fs::read_to_string(&path).unwrap(), "old");
+    }
+
+    #[test]
+    fn a_save_goes_through_a_temp_file_left_by_a_crashed_one() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        std::fs::write(tmp.path().join("state.toml.tmp"), "half a fi").unwrap();
+
+        AppState::default().save_to(path.clone()).unwrap();
+
+        let left: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["state.toml"]);
+    }
+
+    #[test]
+    fn a_save_that_cannot_rename_removes_its_temp_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("state.toml");
+        std::fs::create_dir(&path).unwrap();
+
+        assert!(AppState::default().save_to(path.clone()).is_err());
+
+        let left: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, ["state.toml"]);
+    }
+
     #[test]
     fn truncated_config_is_a_parse_error() {
         let tmp = tempfile::TempDir::new().unwrap();

@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 /// Latest processed frame in the fixed pipeline format (I420, see
-/// [`super::FRAME_SIZE`]). `None` until the first frame arrives, or after
+/// [`super::PipelineFormat::frame_size`]). `None` until the first frame arrives, or after
 /// [`Bridge::clear`].
 #[derive(Default)]
 pub struct Bridge {
