@@ -511,6 +511,16 @@ mod widget_tests {
         });
     }
 
+    fn without_entities(markup: &str) -> String {
+        markup
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&apos;", "'")
+            .replace("&#39;", "'")
+            .replace("&amp;", "&")
+    }
+
     #[test]
     fn the_models_group_lists_each_bundled_model_then_the_delete_row() {
         run(|| {
@@ -521,9 +531,10 @@ mod widget_tests {
             for (id, name, purpose) in BUNDLED_MODELS {
                 let row = &models.rows[id];
                 assert_eq!(row.title(), *name);
-                // The constants are Pango markup ("&amp;"); the row shows the text.
+                // The constants are Pango markup; libadwaita versions differ on whether
+                // the row hands it back escaped.
                 let shown = row.subtitle().unwrap();
-                assert_eq!(glib::markup_escape_text(&shown), *purpose);
+                assert_eq!(without_entities(&shown), without_entities(purpose));
             }
             assert_eq!(group_titles(&page), ["Models"]);
         });
