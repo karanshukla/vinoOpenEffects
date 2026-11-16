@@ -41,7 +41,6 @@ fn main() -> anyhow::Result<()> {
 async fn run() -> anyhow::Result<()> {
     init_tracing();
 
-    // Must run before config and models are read.
     shared::migrate::migrate_legacy_paths().log();
 
     let start_pipeline = std::env::args().any(|arg| arg == "--start");

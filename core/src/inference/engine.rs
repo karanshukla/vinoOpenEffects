@@ -9,9 +9,8 @@ use tracing::warn;
 use super::hand::{HandLandmarker, PalmDetector};
 use super::models::{AutoLight, SelfieSeg, YuNet};
 
-/// A lazily-loaded model, with a one-shot failure memo so a missing model
-/// is logged once rather than retried every frame, and a last-use stamp so
-/// an idle model can be dropped and reloaded on demand.
+/// A lazily-loaded model, with a failure memo so a missing model is logged
+/// once, and a last-use stamp so an idle one can be dropped.
 struct Slot<T> {
     model: Option<T>,
     active_ep: Option<&'static str>,
@@ -327,8 +326,7 @@ impl Engine {
     /// compiles for the provider), so callers run it without holding the
     /// frame lock and then [`replace`](Self::replace) the live engine.
     pub fn load(provider: &str, wanted: LoadedModels) -> anyhow::Result<Self> {
-        // Reset first: a stale accelerator-failed memo from the old provider would pin `auto` to
-        // CPU.
+        // A memo from the old provider would pin `auto` to CPU.
         super::reset_accel_failed();
         let mut detail = None;
         let selfie = reload(
@@ -382,7 +380,7 @@ impl Engine {
     }
 
     /// Run each loaded model once on a blank frame. OpenVINO compiles for the
-    /// NPU on the first run, not at load (365 ms cold here), so this keeps that
+    /// NPU on the first run, not at load (365 ms cold, measured 2026-10-15), so this keeps that
     /// off the frame thread.
     fn prime(&mut self) {
         const S: usize = 64;

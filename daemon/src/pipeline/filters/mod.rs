@@ -6,9 +6,7 @@ use gst::glib;
 use gst::prelude::*;
 use gstreamer as gst;
 
-/// Register the `oe_effects` CPU video filter so the effects bin can create it
-/// by name. Idempotent: skips registration if the element already exists (e.g.
-/// when called more than once in the same process, such as across tests).
+/// Register the `oe_effects` element by name; a no-op if already registered.
 pub fn register() -> Result<(), glib::BoolError> {
     if gst::ElementFactory::find("oe_effects").is_none() {
         gst::Element::register(

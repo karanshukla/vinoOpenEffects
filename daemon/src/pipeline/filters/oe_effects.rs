@@ -38,7 +38,7 @@ mod imp {
     #[derive(Default)]
     struct State {
         effects: Effects,
-        /// Packed-frame buffer reused across frames to avoid a multi-MB alloc each time.
+        /// The packed frame, reused to skip a multi-MB allocation per frame.
         canvas: Vec<u8>,
     }
 

@@ -12,11 +12,9 @@ use tracing::{info, warn};
 use super::bridge::Bridge;
 use super::{PipelineFormat, WorkerMsg, cameras, effects};
 
-/// The GStreamer half of the virtual camera: it captures the real webcam, runs
-/// the effects bin, and hands each processed frame to the [`Bridge`] via an
-/// appsink. It carries no PipeWire output sink — the native provide node
-/// ([`super::provider`]) publishes the result. This pipeline only exists while a
-/// consumer is connected; building it opens the camera, dropping it releases it.
+/// The GStreamer half of the virtual camera: capture, the effects bin, and an
+/// appsink into the [`Bridge`] that [`super::provider`] serves from. It exists
+/// only while a consumer is connected; dropping it releases the camera.
 pub struct BuiltCapture {
     pipeline: gst::Pipeline,
     id: u64,
@@ -152,12 +150,9 @@ fn output_caps(fmt: PipelineFormat) -> gst::Caps {
         .build()
 }
 
-/// Caps pinned directly on the camera source: same dimensions/rate as the
-/// output, in either raw or MJPEG (decodebin decodes the latter). This forces
-/// the camera to capture *at* the virtual-camera mode instead of letting
-/// negotiation pick an arbitrary default (e.g. raw 640x480 on cameras that only
-/// do 720p in MJPEG), which videoscale would then stretch to the output size
-/// and distort the aspect ratio.
+/// Caps pinned on the camera source: the output's size and rate, raw or MJPEG.
+/// Left to negotiate, a camera that only does 720p in MJPEG picks raw 640x480,
+/// which videoscale then stretches.
 fn source_caps(fmt: PipelineFormat) -> gst::Caps {
     let dims = |name: &str| {
         gst::Structure::builder(name)
@@ -307,10 +302,9 @@ fn drain_bus_error(pipeline: &gst::Pipeline) -> Option<String> {
     None
 }
 
-/// Resolve which physical camera the pipeline should use: the configured one
-/// when it exists, otherwise autodetect. `None` means no camera at all
-/// (`videotestsrc` fallback). Shared by `probe_format` and `build_source` so
-/// the probed mode always belongs to the camera that is actually opened.
+/// The configured camera if it exists, else the autodetected one; `None`
+/// means `videotestsrc`. `probe_format` and `build_source` both use it, so
+/// the probed mode belongs to the camera that opens.
 pub(crate) fn resolve_camera(app: &AppState) -> Option<cameras::CameraInfo> {
     let selected = app.camera.selected.trim();
 

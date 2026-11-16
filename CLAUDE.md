@@ -98,8 +98,11 @@ each one checks. The ones that bite:
 
 ## Conventions
 
-- Code comments are one line, only where the code would invite a wrong fix.
-  Longer reasoning goes in `docs/`, linked from the comment.
+- Comments follow [docs/comment-style.md](docs/comment-style.md): extract,
+  name, or pin a rule with a named test pair first, cited from the code as
+  ``(pinned by `tests::name`)``; `shared/tests/doc_links.rs` (CI job Doc
+  Links) fails on a citation with no such `#[test]`. Prose that's left is one
+  line where it can be; longer reasoning goes in `docs/`, linked from it.
 - Measured claims carry a date and the machine (`docs/hardware.md`).
 - Every Actions `uses:` is pinned to a commit SHA with a version comment.
 - A `deny.toml` advisory ignore needs a written reason next to it.

@@ -1,19 +1,13 @@
-//! Native libpipewire `Video/Source` provide node — the on-demand hinge.
+//! The native libpipewire `Video/Source` node consumers see as the camera.
+//! It waits in `PAUSED` with the real camera closed; a consumer moving it to
+//! `STREAMING` makes the worker open the capture pipeline, and leaving closes
+//! it again. Graph laziness alone doesn't gate a hardware capture stream, so
+//! this `state_changed` gating is what keeps the webcam LED off until an app
+//! opens the camera.
 //!
-//! At daemon start this node is advertised to the graph and sits in `PAUSED`
-//! with the real camera untouched (webcam LED off). When a consumer (browser,
-//! OBS, ...) selects and starts the virtual camera, the provide stream moves to
-//! `STREAMING`; that transition tells the GStreamer worker to open the capture
-//! pipeline (LED on). When the consumer leaves, the stream drops back to
-//! `PAUSED`/`UNCONNECTED` and the worker tears the capture pipeline down (LED
-//! off). Graph laziness alone does *not* gate a hardware capture stream, so this
-//! explicit `state_changed` gating is what makes "LED off until an app opens the
-//! camera" actually hold.
-//!
-//! libpipewire objects are not `Send`, so the whole node runs on its own thread
-//! driving a `pw_main_loop`. It talks to the rest of the daemon only through
-//! channels (`CaptureCmd` to the worker, `PipelineEvent` to the D-Bus state) and
-//! the shared `Arc<Bridge>` latest-frame slot.
+//! libpipewire objects aren't `Send`, so the node runs a `pw_main_loop` on its
+//! own thread and talks to the daemon only through channels and the shared
+//! [`Bridge`](super::bridge::Bridge).
 
 use std::io::Cursor;
 use std::sync::Arc;
@@ -45,10 +39,8 @@ struct UserData {
     frame_count: u64,
 }
 
-/// Run the provide node until a unit message is received on `quit_rx`.
-///
-/// On fatal setup failure (e.g. no PipeWire daemon) an `Error` event is emitted
-/// and the function returns; the worker treats the node as down.
+/// Run the provide node until `quit_rx` receives. A setup failure (no
+/// PipeWire, say) emits an `Error` event and returns.
 pub fn run(
     bridge: Arc<Bridge>,
     fmt: PipelineFormat,
@@ -282,9 +274,8 @@ fn spawn_tick_thread(
     });
 }
 
-/// The single video format we advertise to consumers: I420 at the selected
-/// camera's native resolution/framerate, exactly what the capture pipeline
-/// delivers.
+/// The one format consumers are offered: I420 at the camera's native mode,
+/// what the capture pipeline delivers.
 fn build_format_pod(fmt: PipelineFormat) -> Vec<u8> {
     let obj = pw::spa::pod::object!(
         pw::spa::utils::SpaTypes::ObjectParamFormat,
@@ -330,9 +321,8 @@ fn build_format_pod(fmt: PipelineFormat) -> Vec<u8> {
     .into_inner()
 }
 
-/// Buffer requirements answered during format negotiation. The buffer-param keys
-/// have no typed enum in libspa-rs, so we build the object from raw `spa_sys`
-/// constants.
+/// Buffer requirements for format negotiation, from raw `spa_sys` constants:
+/// libspa-rs has no typed enum for these keys.
 fn build_buffers_pod(fmt: PipelineFormat) -> Vec<u8> {
     use pw::spa::pod::{ChoiceValue, Object, Property, Value};
     use pw::spa::sys;

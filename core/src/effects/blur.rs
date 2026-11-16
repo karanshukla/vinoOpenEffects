@@ -16,20 +16,10 @@ pub(crate) struct BlurScratch {
 }
 
 impl BlurScratch {
-    /// Blur the background behind the subject in `img`.
-    ///
-    /// The blur runs on a downscaled copy of the frame, then the composite
-    /// bilinearly upsamples it on the fly. A blurred background is
-    /// low-frequency by construction, so the result is visually identical at
-    /// a fraction of the full-resolution cost (the dominant per-frame load
-    /// when blur is on).
-    ///
-    /// The blur is *background-weighted*: each pixel is premultiplied by its
-    /// background weight `255-mask` before the box passes, and the weight is
-    /// carried in alpha and blurred alongside, so the composite can normalize
-    /// (`rgb·255/alpha`) to a weighted mean that ignores the subject. Blurring
-    /// the raw frame instead would smear the person's colors into the
-    /// background and halo the edge (#1).
+    /// Blur the background behind the subject in `img`, on a downscaled copy
+    /// the composite upsamples (a blur is low-frequency anyway). The blur is
+    /// background-weighted so the subject's colors never halo the edge
+    /// (pinned by `tests::blurred_background_excludes_subject`).
     pub(crate) fn blur_background(
         &mut self,
         img: &mut [u8],
@@ -55,14 +45,13 @@ impl BlurScratch {
     }
 }
 
-/// Map a 0–100 strength to a box-blur radius (full-resolution units).
+/// A 0–100 strength as a box-blur radius in full-resolution pixels.
 fn blur_radius(strength: u32) -> usize {
     1 + (strength as usize * 24) / 100
 }
 
-/// Downscale factor the blur runs at. Heavier blurs tolerate (and benefit
-/// from) a smaller working image; light blurs stay near full resolution so
-/// the minimum strength still looks subtle.
+/// Downscale factor the blur runs at; light blurs stay near full resolution
+/// so the minimum strength still looks subtle.
 fn blur_scale(radius: usize) -> usize {
     match radius {
         0..=1 => 1,
@@ -71,14 +60,10 @@ fn blur_scale(radius: usize) -> usize {
     }
 }
 
-/// Box-average the frame down by `scale` into `dst`, weighting every pixel
-/// by its background weight `wbg = 255 - mask` so the subject's pixels are
-/// kept out of the blurred background (the fix for the edge halo). RGB holds
-/// the premultiplied average `mean(color · wbg/255)`; alpha holds the mean
-/// weight `mean(wbg)`. Downstream the background color is recovered as
-/// `rgb·255/alpha`, i.e. the weighted mean of the background pixels alone —
-/// person pixels (wbg ≈ 0) drop out. `box_blur` then blurs all four channels
-/// so premul and weight stay consistent under the blur.
+/// Box-average the frame down by `scale` into `dst`, weighting each pixel by
+/// its background weight `wbg = 255 - mask`: RGB holds `mean(color · wbg/255)`
+/// and alpha `mean(wbg)`, so the composite's `rgb·255/alpha` is the mean of
+/// the background alone.
 #[allow(clippy::too_many_arguments)]
 fn downsample_masked(
     src: &[u8],
@@ -121,11 +106,9 @@ fn downsample_masked(
     }
 }
 
-/// Separable box blur (two passes ≈ triangle kernel) in place, ping-ponging
-/// through `tmp`. Per-row/column prefix sums keep cost independent of
-/// radius. All four channels are blurred: RGB carries premultiplied color
-/// and alpha carries the background weight, and both must see the same blur
-/// so the composite's un-premultiply stays correct (see `downsample_masked`).
+/// Separable box blur, applied twice (≈ a triangle kernel), in place through
+/// `tmp`. Alpha is blurred with RGB: it carries the weight the composite
+/// divides by.
 fn box_blur(
     buf: &mut [u8],
     tmp: &mut Vec<u8>,
@@ -184,11 +167,7 @@ fn box_blur_v(src: &[u8], dst: &mut [u8], prefix: &mut [i32], w: usize, h: usize
 mod tests {
     use super::*;
 
-    /// Regression for #1: portrait blur must not bleed the subject's color
-    /// into the blurred background (the halo). A red subject on a blue
-    /// background, blurred with the background-weighted path, leaves the
-    /// background pure blue right up to the subject edge — a plain blur of
-    /// the whole frame would smear red into that band.
+    /// A red subject on blue: the background stays pure blue up to the edge.
     #[test]
     fn blurred_background_excludes_subject() {
         let (w, h) = (16usize, 16usize);

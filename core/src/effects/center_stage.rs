@@ -14,12 +14,14 @@ const FACE_INTERVAL: u64 = 4;
 const CS_ALPHA: f32 = 0.18;
 /// Tightest crop as a fraction of each axis, capping zoom at 4×.
 const CS_MIN_CROP: f32 = 0.25;
-/// Framing stays locked while the subject drifts less than this fraction of the crop span; see docs/architecture.md#center-stage.
+/// Framing stays locked while the subject drifts less than this fraction of
+/// the crop span (docs/architecture.md#center-stage).
 const CS_COMFORT_POS: f32 = 0.20;
 /// Framing stays locked while the ideal/committed zoom ratio is inside this band.
 const CS_COMFORT_ZOOM_LO: f32 = 0.78;
 const CS_COMFORT_ZOOM_HI: f32 = 1.30;
-/// A drift past this fraction of the span (or zoom outside the band below) reframes on the fast path.
+/// A drift past this fraction of the span, or a zoom ratio outside this band,
+/// reframes after `CS_FAST_CONFIRM` frames instead of `CS_CONFIRM`.
 const CS_BREACH_POS: f32 = 0.45;
 const CS_BREACH_ZOOM_LO: f32 = 0.55;
 const CS_BREACH_ZOOM_HI: f32 = 1.85;
@@ -27,11 +29,12 @@ const CS_BREACH_ZOOM_HI: f32 = 1.85;
 const CS_CONFIRM: u32 = 30;
 const CS_FAST_CONFIRM: u32 = 9;
 const EYES_ABOVE_FACE_CENTER: f32 = 0.25;
+/// A crop at least this wide is the whole frame: nothing to resample.
+const FULL_FRAME: f32 = 0.999;
 
-/// EMA-smoothed crop window in normalized frame coordinates. `zf` is the
-/// fraction of each axis the crop spans (1.0 = full frame, smaller = zoomed
-/// in); the crop is square in normalized space so the pixel rect keeps the
-/// frame's aspect ratio.
+/// A crop window in normalized frame coordinates. `zf` is the fraction of
+/// each axis it spans (1.0 = full frame); the same fraction on both axes keeps
+/// the frame's aspect ratio.
 #[derive(Clone, Copy)]
 pub(crate) struct CropState {
     cx: f32,
@@ -53,12 +56,9 @@ impl Default for CropState {
 pub(crate) struct CenterStage {
     /// EMA-smoothed crop actually applied this frame.
     crop: CropState,
-    /// Committed framing target the crop eases toward; locked until the
-    /// subject sustains a position outside the comfort zone (see
-    /// `update_target`).
+    /// Committed framing target the crop eases toward.
     target: CropState,
-    /// Consecutive frames the subject's ideal crop has been outside the
-    /// committed target's comfort zone.
+    /// Consecutive frames the ideal crop has been outside `target`'s comfort zone.
     out_frames: u32,
     pub(crate) faces: Vec<Face>,
 }
@@ -71,9 +71,7 @@ impl CenterStage {
         self.out_frames = 0;
     }
 
-    /// Decide this frame's crop on the full frame: refresh face detection on
-    /// its cadence, reframe if the subject has settled somewhere new, and
-    /// ease the applied crop toward the committed target.
+    /// This frame's crop, decided on the full frame.
     pub(crate) fn track(
         &mut self,
         engine: &mut Engine,
@@ -94,9 +92,8 @@ impl CenterStage {
             self.faces = faces;
         }
 
-        let subject = subject_box(&self.faces, &settings.cs_mode);
-        if let Some(raw) = subject.map(|s| crop_target(Some(s), &settings.cs_zoom)) {
-            self.update_target(raw);
+        if let Some(subject) = subject_box(&self.faces, &settings.cs_mode) {
+            self.update_target(crop_target(subject, &settings.cs_zoom));
         }
 
         let t = self.target;
@@ -107,15 +104,12 @@ impl CenterStage {
         *crop
     }
 
-    /// Lock-and-confirm reframing (the macOS Center Stage feel). The committed
-    /// target is *locked* while the subject's ideal crop stays inside the
-    /// comfort zone around it — natural movement (rotate, tilt, grin, lean,
-    /// small back-and-forth) never reframes, no matter how long it lasts. Only
-    /// a displacement that *stays* outside the comfort zone for the
-    /// confirmation window commits a new target: ≈1 s for a moderate drift,
-    /// ≈0.3 s for a drastic one (stood up, walked across, face count changed).
-    /// A transient excursion that returns in time resets the counter and never
-    /// moves the crop.
+    /// Commit `raw` as the target only once it has stayed outside the comfort
+    /// zone for the confirmation window (pinned by
+    /// `tests::drift_inside_the_comfort_zone_never_reframes`,
+    /// `tests::sustained_drift_reframes_after_the_confirm_window`,
+    /// `tests::a_drastic_move_reframes_on_the_fast_path`,
+    /// `tests::returning_in_time_resets_the_count`).
     fn update_target(&mut self, raw: CropState) {
         let t = self.target;
         let span = t.zf.max(CS_MIN_CROP);
@@ -144,34 +138,68 @@ impl CenterStage {
 }
 
 /// The crop window copied out at whole-pixel bounds, plus where the exact
-/// (fractional) crop sits inside it, so the frame is resampled only once, on
-/// the way back up.
+/// crop sits inside it, so the frame is resampled only once, on the way back
+/// up (pinned by `tests::roi_round_trip_resamples_once`).
 pub(crate) struct Roi {
     pub(crate) buf: Vec<u8>,
     pub(crate) w: usize,
     pub(crate) h: usize,
+    window: Window,
+}
+
+/// A fractional rectangle of a source image, in pixels.
+#[derive(Clone, Copy)]
+struct Window {
     x0: f32,
     y0: f32,
     span_x: f32,
     span_y: f32,
 }
 
+/// The pixel rectangle `crop` covers in a `w`×`h` frame.
+fn pixel_window(crop: CropState, zf: f32, w: usize, h: usize) -> Window {
+    Window {
+        x0: (crop.cx - zf / 2.0) * w as f32,
+        y0: (crop.cy - zf / 2.0) * h as f32,
+        span_x: zf * w as f32,
+        span_y: zf * h as f32,
+    }
+}
+
+/// Fill the `w`×`h` `dst` with `window` of `src`, bilinearly.
+fn resample_window(
+    dst: &mut [u8],
+    w: usize,
+    h: usize,
+    src: &[u8],
+    sw: usize,
+    sh: usize,
+    window: Window,
+) {
+    for y in 0..h {
+        let sv = window.y0 + (y as f32 + 0.5) / h as f32 * window.span_y - 0.5;
+        for x in 0..w {
+            let su = window.x0 + (x as f32 + 0.5) / w as f32 * window.span_x - 0.5;
+            let dp = (y * w + x) * 4;
+            sample_bilinear(src, sw, sh, su, sv, &mut dst[dp..dp + 4]);
+        }
+    }
+}
+
 /// Copy the crop window into a tight RGBA buffer so segmentation, blur and
 /// composite run on ROI-sized pixels. `None` when the crop spans the frame.
 pub(crate) fn extract_roi(img: &[u8], w: usize, h: usize, crop: CropState) -> Option<Roi> {
     let zf = crop.zf.clamp(CS_MIN_CROP, 1.0);
-    if zf >= 0.999 {
+    if zf >= FULL_FRAME {
         return None;
     }
-    let span_x = zf * w as f32;
-    let span_y = zf * h as f32;
-    let fx = (crop.cx - zf / 2.0) * w as f32;
-    let fy = (crop.cy - zf / 2.0) * h as f32;
+    let exact = pixel_window(crop, zf, w, h);
+    let (fx, fy) = (exact.x0, exact.y0);
     // One pixel of margin each side: bilinear at the crop's edge reads its neighbour.
     let ix = ((fx.floor() - 1.0).max(0.0) as usize).min(w - 1);
     let iy = ((fy.floor() - 1.0).max(0.0) as usize).min(h - 1);
-    let ex = (((fx + span_x).ceil() + 1.0) as usize).clamp(ix + 1, w);
-    let ey = (((fy + span_y).ceil() + 1.0) as usize).clamp(iy + 1, h);
+    let ex = (((fx + exact.span_x).ceil() + 1.0) as usize).clamp(ix + 1, w);
+    let ey = (((fy + exact.span_y).ceil() + 1.0) as usize).clamp(iy + 1, h);
     let (rw, rh) = (ex - ix, ey - iy);
     let mut buf = Vec::with_capacity(rw * rh * 4);
     for y in iy..ey {
@@ -181,65 +209,50 @@ pub(crate) fn extract_roi(img: &[u8], w: usize, h: usize, crop: CropState) -> Op
         buf,
         w: rw,
         h: rh,
-        x0: fx - ix as f32,
-        y0: fy - iy as f32,
-        span_x,
-        span_y,
+        window: Window {
+            x0: fx - ix as f32,
+            y0: fy - iy as f32,
+            ..exact
+        },
     })
 }
 
-/// Upscale the composited ROI's exact crop back into the full-frame output (bilinear).
+/// Upscale the composited ROI's exact crop back into the full-frame output.
 pub(crate) fn upscale_roi(img: &mut [u8], w: usize, h: usize, roi: &Roi) {
-    for y in 0..h {
-        let sv = roi.y0 + (y as f32 + 0.5) / h as f32 * roi.span_y - 0.5;
-        for x in 0..w {
-            let su = roi.x0 + (x as f32 + 0.5) / w as f32 * roi.span_x - 0.5;
-            let dp = (y * w + x) * 4;
-            sample_bilinear(&roi.buf, roi.w, roi.h, su, sv, &mut img[dp..dp + 4]);
-        }
-    }
+    resample_window(img, w, h, &roi.buf, roi.w, roi.h, roi.window);
 }
 
-/// Resample the crop window back up to the full frame (bilinear), in place.
+/// Resample the crop window back up to the full frame, in place.
 pub(crate) fn resample_crop(img: &mut [u8], w: usize, h: usize, crop: CropState) {
-    if crop.zf >= 0.999 {
+    if crop.zf >= FULL_FRAME {
         return;
     }
     let src = img.to_vec();
-    let half = crop.zf / 2.0;
-    let x0 = (crop.cx - half) * w as f32;
-    let y0 = (crop.cy - half) * h as f32;
-    let span_x = crop.zf * w as f32;
-    let span_y = crop.zf * h as f32;
-    for y in 0..h {
-        let sv = y0 + (y as f32 + 0.5) / h as f32 * span_y - 0.5;
-        for x in 0..w {
-            let su = x0 + (x as f32 + 0.5) / w as f32 * span_x - 0.5;
-            let dp = (y * w + x) * 4;
-            sample_bilinear(&src, w, h, su, sv, &mut img[dp..dp + 4]);
-        }
-    }
+    resample_window(img, w, h, &src, w, h, pixel_window(crop, crop.zf, w, h));
 }
 
 /// What the framing `span` was derived from, which sets its margin scale.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum SubjectKind {
-    /// A single face's bbox height (forehead→chin).
+    /// A single face's bbox height.
     Face,
-    /// Union of head boxes (group mode).
+    /// The union of all face boxes.
     Group,
 }
 
-/// Normalized subject to frame on: `(cx, cy, span, kind)`.
-///
-/// To keep the face fully in frame while staying steady through expressions:
-/// the framing **center** uses the eye midpoint (expression-invariant — a
-/// smile doesn't move the eyes), but the framing **span** uses the bbox
-/// *height* (forehead→chin), which sets the zoom so the whole face fits with
-/// headroom. Height is far more expression-stable than width (smiling widens
-/// the mouth, not the face height), so the zoom barely moves either. Falls
-/// back to the bbox center when landmarks are missing.
-fn subject_box(faces: &[Face], mode: &str) -> Option<(f32, f32, f32, SubjectKind)> {
+/// What to frame on, normalized.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Subject {
+    cx: f32,
+    cy: f32,
+    span: f32,
+    kind: SubjectKind,
+}
+
+/// One face: centered on the eyes and sized by the bbox height, which a
+/// smile doesn't change (bbox center without landmarks). Group: the union
+/// box, padded by the mean face height.
+fn subject_box(faces: &[Face], mode: &str) -> Option<Subject> {
     if faces.is_empty() {
         return None;
     }
@@ -254,12 +267,12 @@ fn subject_box(faces: &[Face], mode: &str) -> Option<(f32, f32, f32, SubjectKind
             height_sum += f.h;
         }
         let pad = height_sum / faces.len() as f32;
-        return Some((
-            (x0 + x1) / 2.0,
-            (y0 + y1) / 2.0,
-            (x1 - x0).max(y1 - y0) + pad,
-            SubjectKind::Group,
-        ));
+        return Some(Subject {
+            cx: (x0 + x1) / 2.0,
+            cy: (y0 + y1) / 2.0,
+            span: (x1 - x0).max(y1 - y0) + pad,
+            kind: SubjectKind::Group,
+        });
     }
     let best = faces.iter().max_by(|a, b| a.score.total_cmp(&b.score))?;
     let (cx, cy) = if best.eye_dist > 0.0 {
@@ -267,12 +280,16 @@ fn subject_box(faces: &[Face], mode: &str) -> Option<(f32, f32, f32, SubjectKind
     } else {
         (best.cx, best.cy)
     };
-    Some((cx, cy, best.h, SubjectKind::Face))
+    Some(Subject {
+        cx,
+        cy,
+        span: best.h,
+        kind: SubjectKind::Face,
+    })
 }
 
-/// Crop span = `face height × margin`; a tighter zoom leaves less headroom.
-/// All margins are > 1 so the crop always encloses the full face (the bbox
-/// height) plus forehead/chin/hair room — even "tight" never cuts the face.
+/// Crop span = subject span × margin. Every margin is above 1, so even
+/// "tight" never cuts the face (pinned by `tests::every_zoom_encloses_the_subject`).
 fn zoom_margin(zoom: &str, kind: SubjectKind) -> f32 {
     match kind {
         SubjectKind::Face => match zoom {
@@ -288,19 +305,13 @@ fn zoom_margin(zoom: &str, kind: SubjectKind) -> f32 {
     }
 }
 
-/// Target crop: centered on the subject (clamped so the crop stays inside
-/// the frame) and sized relative to the subject, so the face is recentered
-/// wherever it moves and the zoom level only changes the spacing around it.
-/// No subject → relax back to the full frame so the zoom resets smoothly.
-fn crop_target(subject: Option<(f32, f32, f32, SubjectKind)>, zoom: &str) -> CropState {
-    let Some((cx, cy, span, kind)) = subject else {
-        return CropState::default();
-    };
-    let zf = (span * zoom_margin(zoom, kind)).clamp(CS_MIN_CROP, 1.0);
+/// The ideal crop around `subject`, clamped inside the frame.
+fn crop_target(subject: Subject, zoom: &str) -> CropState {
+    let zf = (subject.span * zoom_margin(zoom, subject.kind)).clamp(CS_MIN_CROP, 1.0);
     let half = zf / 2.0;
     CropState {
-        cx: cx.clamp(half, 1.0 - half),
-        cy: cy.clamp(half, 1.0 - half),
+        cx: subject.cx.clamp(half, 1.0 - half),
+        cy: subject.cy.clamp(half, 1.0 - half),
         zf,
     }
 }
@@ -335,5 +346,85 @@ mod tests {
     #[test]
     fn full_frame_crop_has_no_roi() {
         assert!(extract_roi(&[0; 16], 2, 2, CropState::default()).is_none());
+    }
+
+    fn crop(cx: f32, zf: f32) -> CropState {
+        CropState { cx, cy: 0.5, zf }
+    }
+
+    /// A stage committed to a half-frame crop at the center.
+    fn settled() -> CenterStage {
+        let mut stage = CenterStage::default();
+        stage.target = crop(0.5, 0.5);
+        stage
+    }
+
+    /// Feed `raw` for `frames` frames; whether the target moved to it.
+    fn reframes_after(stage: &mut CenterStage, raw: CropState, frames: u32) -> bool {
+        for _ in 0..frames {
+            stage.update_target(raw);
+        }
+        stage.target.cx == raw.cx
+    }
+
+    #[test]
+    fn drift_inside_the_comfort_zone_never_reframes() {
+        let mut stage = settled();
+        let drift = 0.5 + 0.5 * CS_COMFORT_POS * 0.9;
+        assert!(!reframes_after(
+            &mut stage,
+            crop(drift, 0.5),
+            10 * CS_CONFIRM
+        ));
+    }
+
+    #[test]
+    fn sustained_drift_reframes_after_the_confirm_window() {
+        let drift = crop(0.5 + 0.5 * (CS_COMFORT_POS + CS_BREACH_POS) / 2.0, 0.5);
+        assert!(!reframes_after(&mut settled(), drift, CS_CONFIRM - 1));
+        assert!(reframes_after(&mut settled(), drift, CS_CONFIRM));
+    }
+
+    #[test]
+    fn a_drastic_move_reframes_on_the_fast_path() {
+        let breach = crop(0.5 + 0.5 * CS_BREACH_POS * 1.1, 0.5);
+        assert!(!reframes_after(&mut settled(), breach, CS_FAST_CONFIRM - 1));
+        assert!(reframes_after(&mut settled(), breach, CS_FAST_CONFIRM));
+    }
+
+    #[test]
+    fn returning_in_time_resets_the_count() {
+        let mut stage = settled();
+        let drift = crop(0.5 + 0.5 * (CS_COMFORT_POS + CS_BREACH_POS) / 2.0, 0.5);
+        reframes_after(&mut stage, drift, CS_CONFIRM - 1);
+        stage.update_target(stage.target);
+        assert!(!reframes_after(&mut stage, drift, CS_CONFIRM - 1));
+    }
+
+    #[test]
+    fn every_zoom_encloses_the_subject() {
+        for kind in [SubjectKind::Face, SubjectKind::Group] {
+            for zoom in ["subtle", "tight", "normal"] {
+                assert!(zoom_margin(zoom, kind) > 1.0, "{zoom} {kind:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_single_face_is_framed_on_its_eyes_and_height() {
+        let face = Face {
+            cx: 0.5,
+            cy: 0.5,
+            w: 0.3,
+            h: 0.2,
+            score: 0.9,
+            eye_cx: 0.45,
+            eye_cy: 0.4,
+            eye_dist: 0.1,
+        };
+        let subject = subject_box(&[face], "single").unwrap();
+        assert_eq!(subject.cx, 0.45);
+        assert_eq!(subject.cy, 0.4 + 0.2 * EYES_ABOVE_FACE_CENTER);
+        assert_eq!(subject.span, 0.2);
     }
 }

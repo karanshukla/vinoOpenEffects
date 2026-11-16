@@ -1,11 +1,5 @@
-//! Concrete model wrappers built on top of the ONNX Runtime session API.
-//!
-//! Each wrapper owns one `ort::Session` and exposes a single high-level call
-//! (segment / detect) that takes an RGBA frame buffer and returns the decoded
-//! result. Sessions run on the GStreamer streaming thread, so the wrappers are
-//! `Send` (ORT's `Session` is `Send + Sync`) and are held behind a `Mutex` in
-//! the effects element. Which execution provider a session gets is decided in
-//! [`super::load_session`].
+//! One wrapper per model: each owns an `ort::Session` and turns an RGBA frame
+//! into a decoded result. [`super::load_session`] picks the provider.
 
 use anyhow::{Context, Result};
 use ort::session::Session;
@@ -66,8 +60,7 @@ impl SelfieSeg {
         let (_shape, data) = outputs[Self::OUTPUT].try_extract_tensor::<f32>()?;
         let mut values = vec![0f32; area];
         for (dst, &v) in values.iter_mut().zip(data.iter()) {
-            // The shipped model emits probabilities; out-of-range values mean a re-export emitting
-            // logits.
+            // The shipped model emits probabilities; a re-export may emit logits.
             *dst = if !(0.0..=1.0).contains(&v) {
                 1.0 / (1.0 + (-v).exp())
             } else {
@@ -81,10 +74,9 @@ impl SelfieSeg {
 /// IAT (Illumination Adaptive Transformer, 91k params) low-light enhancer.
 /// Input `input` and output `output` are NCHW `[1,3,256,256]` RGB in `0..1`.
 ///
-/// NPU only: ~10 ms there, ~850 ms on CPU. Rather than use the enhanced image
-/// (which over-brightens well-lit frames and shifts colour), only its
-/// luminance ratio to the input is kept, as a low-res gain map the filter
-/// upsamples and applies to the full-resolution frame.
+/// NPU only: ~10 ms there, ~850 ms on CPU (2026-10-12). Only the enhanced
+/// image's luminance ratio to the input is kept, as a low-res gain map: the
+/// image itself over-brightens well-lit frames and shifts colour.
 pub struct AutoLight {
     session: Session,
 }
@@ -189,12 +181,8 @@ impl Mask {
     }
 }
 
-/// A detected face, in normalized frame coordinates (`0..1`).
-///
-/// `eye_*` come from YuNet's 5-point landmarks: the eye midpoint and the
-/// interocular distance. These are expression-invariant (smiling widens the
-/// bbox but leaves the eyes put), so center-stage framing uses them instead of
-/// the bbox. `eye_dist == 0.0` means landmarks weren't available for this face.
+/// A detected face, in normalized frame coordinates (`0..1`). `eye_*` are the
+/// eye midpoint and distance; `eye_dist == 0.0` means no landmarks.
 #[derive(Debug, Clone, Copy)]
 pub struct Face {
     pub cx: f32,
@@ -410,8 +398,7 @@ mod tests {
         buf
     }
 
-    /// These exercise real ONNX Runtime inference against the bundled models, so
-    /// they no-op when the models aren't installed (CI without fetch-models.sh).
+    /// Real inference: no-ops when the models aren't installed.
     #[test]
     fn selfie_seg_runs_and_returns_valid_mask() {
         if super::registry::find_model("selfie_segmentation").is_none() {
@@ -454,8 +441,7 @@ mod tests {
     /// Needs an NPU and the exported model; skips with a message otherwise.
     #[test]
     fn auto_light_gain_is_bounded_when_available() {
-        // The models workflow fails on "model not installed", so NPU-less runners must skip on this
-        // check first.
+        // Before the model check: the models workflow fails on "model not installed".
         if !super::super::npu_present() {
             eprintln!("skipping: no NPU hardware present");
             return;

@@ -14,14 +14,11 @@ pub struct Settings {
     pub studio_enabled: bool,
     /// Additive brightness, -1.0..1.0 (videobalance semantics).
     pub studio_brightness: f32,
-    /// Contrast multiplier around mid-gray, 0.0..2.0.
+    /// Contrast multiplier around the subject's mean luma, 0.0..2.0.
     pub studio_contrast: f32,
-    /// Background additive brightness, -1.0..1.0. Applied to the inverted
-    /// mask so only the background (not the subject) is affected.
+    /// Additive brightness for the background only, -1.0..1.0.
     pub studio_bg_brightness: f32,
-    /// Reactions effect: when on, the gesture pipeline runs and may
-    /// auto-trigger bursts (manual bursts work regardless, via a one-shot
-    /// property that doesn't touch this flag).
+    /// Gesture-triggered reactions. Manual bursts work regardless.
     pub reactions_enabled: bool,
     /// Auto light (NPU-only low-light model), and how much of its
     /// correction to apply, 0.0..1.0.
@@ -51,8 +48,7 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// Whether any effect does real work (otherwise the element runs in
-    /// passthrough).
+    /// Whether any effect does real work; otherwise the element is passthrough.
     pub fn active(&self) -> bool {
         self.blur_enabled
             || self.bg_enabled
@@ -77,8 +73,7 @@ impl Settings {
         self.auto_light_enabled || self.studio_enabled || self.center_stage_active()
     }
 
-    /// Whether any effect needs the selfie segmentation mask (studio light,
-    /// portrait blur, bg replace). Drives the single shared segmentation.
+    /// Whether any effect needs the person mask (studio light, blur, replace).
     pub fn needs_mask(&self) -> bool {
         self.studio_enabled || self.blur_enabled || self.bg_enabled
     }

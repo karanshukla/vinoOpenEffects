@@ -1,13 +1,6 @@
-//! Background card: the effect switch in the header, then a Blur/Replace mode
-//! control and, in Blur mode, a strength row. The card drives the two
-//! underlying effects — `portrait_blur` and `bg_replace`. Only the controls
-//! for the active mode are shown, and everything is disabled while it's off.
-//!
-//! The mode is *virtual*: `bg_replace.enabled` means Replace, otherwise
-//! Blur, and changing it just toggles those two effects' `enabled` flags
-//! (mutually exclusive). Replace mode offers a grid of built-in image
-//! presets (plus a "choose your own" button) and a row of solid-color
-//! swatches with a custom-color button.
+//! Background card, driving two effects: `portrait_blur` and `bg_replace`.
+//! Its Blur/Replace mode is not stored; `bg_replace.enabled` means Replace,
+//! and choosing a mode enables one effect and disables the other.
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -284,8 +277,7 @@ impl Widgets {
         self.applying.set(false);
     }
 
-    /// `bg_replace` wins; otherwise Blur. Used as the default mode shown
-    /// while neither effect is enabled (switch off).
+    /// Replace if `bg_replace` is on, else Blur, also while the switch is off.
     fn current_mode(&self) -> &'static str {
         if self.bg_enabled.get() {
             return BG_REPLACE;
@@ -509,9 +501,7 @@ fn swatch_box_child(class: &str) -> gtk::Box {
         .build()
 }
 
-/// A "+"-style icon that fills and centers itself in its parent box,
-/// regardless of the box's own size. Used by the custom-color and
-/// custom-image buttons.
+/// A "+" icon centered in its parent, for the custom-color and custom-image buttons.
 fn plus_icon() -> gtk::Image {
     gtk::Image::builder()
         .icon_name("list-add-symbolic")
@@ -557,9 +547,7 @@ fn image_box_child(class: &str) -> gtk::Box {
 }
 
 /// Write the bundled preset background images to the user's data dir (if not
-/// already present) and return their on-disk paths. The daemon loads
-/// `bg_replace.background` as a filesystem path, so the presets need to live
-/// somewhere stable on disk rather than just in memory.
+/// already present) and return their paths: the daemon loads backgrounds from disk.
 fn ensure_preset_images() -> Vec<(&'static str, PathBuf)> {
     let dir = dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
@@ -567,12 +555,12 @@ fn ensure_preset_images() -> Vec<(&'static str, PathBuf)> {
     let _ = std::fs::create_dir_all(&dir);
     BG_IMAGE_PRESETS
         .iter()
-        .map(|(label, filename, bytes)| {
-            let path = dir.join(filename);
+        .map(|preset| {
+            let path = dir.join(preset.file);
             if !path.exists() {
-                let _ = std::fs::write(&path, bytes);
+                let _ = std::fs::write(&path, preset.bytes);
             }
-            (*label, path)
+            (preset.label, path)
         })
         .collect()
 }
@@ -584,7 +572,7 @@ fn set_custom_color(provider: &gtk::CssProvider, hex: &str) {
 }
 
 /// Install the static swatch CSS (base shape + one class per preset color).
-/// Every preset is dark, so on a dark card only the border separates it; see #76.
+/// Every preset is dark, so on a dark card only the border separates it.
 pub(crate) const SWATCH_CSS: &str = ".oe-swatch { border-radius: 50%; border: 1px solid alpha(currentColor, 0.2); } \
      .oe-swatch-btn { padding: 4px; min-width: 0; min-height: 0; } \
      .oe-bg-thumb { border-radius: 10px; border: 1px solid alpha(currentColor, 0.2); } \
@@ -733,8 +721,8 @@ mod widget_tests {
             let mut leader = None;
             let (_row, presets) = build_images_row(&tx, &applying(), &mut leader);
             assert_eq!(presets.len(), BG_IMAGE_PRESETS.len());
-            for ((label, path, button), (want, _, _)) in presets.iter().zip(BG_IMAGE_PRESETS) {
-                assert_eq!(label, want);
+            for ((label, path, button), want) in presets.iter().zip(BG_IMAGE_PRESETS) {
+                assert_eq!(*label, want.label);
                 assert!(path.exists(), "{path:?} was not written");
                 assert_eq!(button.tooltip_text().as_deref(), Some(*label));
             }

@@ -30,7 +30,6 @@ fn main() -> glib::ExitCode {
         .with_writer(std::io::stderr)
         .init();
 
-    // Must run before GuiConfig is read.
     shared::migrate::migrate_legacy_paths().log();
 
     if let Err(err) = gstreamer::init() {

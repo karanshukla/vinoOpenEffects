@@ -1,8 +1,4 @@
-//! Thin wrappers over `systemctl --user` for managing the daemon's user unit.
-//!
-//! Shared by the CLI (`vinoopeneffects-ctl autostart …`) and the GUI (Startup
-//! preferences). This is the only place in the workspace that shells out to an
-//! external process, so the unit name and command shape live here.
+//! `systemctl --user` for the daemon's unit, shared by the CLI and the GUI.
 
 use std::process::Command;
 

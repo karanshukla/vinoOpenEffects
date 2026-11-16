@@ -1,8 +1,5 @@
-//! GUI-local settings, persisted to `~/.config/vinoopeneffects/gui.toml`.
-//!
-//! Separate from the daemon's `AppState` (state.toml): these are client-side
-//! behaviour preferences, not pipeline state. Kept tiny and best-effort — a
-//! failed load falls back to defaults, a failed save is logged and ignored.
+//! GUI-only settings in `~/.config/vinoopeneffects/gui.toml`, apart from the
+//! daemon's state. A failed load gives defaults; a failed save is logged.
 
 use std::path::PathBuf;
 

@@ -40,8 +40,10 @@ cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && carg
   hand. Don't fake it.
 - A failing `golden_frames_are_unchanged` means the effect output changed. If
   that was the point, update the digest and say so in the PR.
-- Code comments are one line, and only where the code would invite a wrong
-  fix. Longer reasoning goes in `docs/`, and the comment links to it.
+- Comments are the last resort: extract, name, or pin a rule with a test
+  pair first, and link the test from the code it governs. See
+  [docs/comment-style.md](docs/comment-style.md); `shared/tests/doc_links.rs`
+  checks the links. Longer reasoning goes in `docs/`, linked from the code.
 - Measured claims (latency, frame rate, power) carry a date and the machine.
 - Commits are conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
   `ci:`, `chore:`); the changelog is generated from them.

@@ -1,9 +1,6 @@
-//! Background D-Bus client task.
-//!
-//! Owns the `zbus::Connection` on a dedicated tokio runtime (GTK's main loop is
-//! glib's, not tokio's). Commands flow GUI -> daemon over an unbounded mpsc
-//! channel; state updates flow daemon -> GUI over an `async_channel`, which the
-//! GTK side drains via `glib::MainContext::spawn_local`.
+//! The D-Bus client, on its own tokio runtime (GTK's main loop is glib's).
+//! Commands go to it over an mpsc channel; updates come back over an
+//! `async_channel` the GTK side drains.
 
 use std::time::Duration;
 
@@ -48,8 +45,7 @@ pub enum GuiCommand {
     RetryInference,
     /// Start the pipeline again after it stopped or failed.
     Start,
-    /// Terminate the daemon process, then acknowledge with `UiUpdate::DaemonQuit`
-    /// so the GUI can finish closing only after the call has been delivered.
+    /// Quit the daemon, then answer `UiUpdate::DaemonQuit` so the GUI closes after it.
     QuitDaemon,
 }
 
@@ -112,9 +108,7 @@ async fn run(
     }
 }
 
-/// Returns `Ok(())` when the client should stop for good (quit requested);
-/// returns `Err` on a lost connection so the caller can reconnect.
-/// Returns true when the command loop should end.
+/// True when the command loop should end.
 async fn handle_command(
     cmd: Option<GuiCommand>,
     effects: &Effects1Proxy<'_>,
@@ -122,8 +116,7 @@ async fn handle_command(
     devices: &Devices1Proxy<'_>,
     update_tx: &async_channel::Sender<UiUpdate>,
 ) -> bool {
-    // Log failed calls instead of propagating: a teardown would re-snapshot state and
-    // visibly reset the controls.
+    // Logged, not propagated: a reconnect would re-snapshot and visibly reset the controls.
     match cmd {
         Some(GuiCommand::SetEnabled { id, on }) => {
             if let Err(err) = effects.set_enabled(&id, on).await {

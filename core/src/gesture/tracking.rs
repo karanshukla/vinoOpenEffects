@@ -11,9 +11,10 @@ const PALM_SCORE_THRESH: f32 = 0.6;
 const HAND_CONF_THRESH: f32 = 0.5;
 /// Most hands tracked at once (two needed for the heart gesture).
 const MAX_TRACKS: usize = 2;
+/// Consecutive low-confidence frames that drop a track.
+const MAX_MISSES: u32 = 2;
 
-/// A tracked hand: the crop to sample next frame, and how many consecutive
-/// frames the landmark model returned low confidence (dropped after 2).
+/// A tracked hand: the crop to sample next frame, and consecutive misses.
 struct HandTrack {
     crop: CropBox,
     missed: u32,
@@ -22,7 +23,6 @@ struct HandTrack {
 /// Hands tracked in one coordinate space (full frame or center-stage ROI).
 #[derive(Default)]
 pub struct HandTracker {
-    /// Currently tracked hands (≤ `MAX_TRACKS`).
     tracks: Vec<HandTrack>,
     /// Earliest frame palm re-detection may run again.
     redetect_at: u64,
@@ -35,9 +35,7 @@ impl HandTracker {
         self.redetect_at = 0;
     }
 
-    /// One tracking step on frame `frame`: palm-detect for new hands when
-    /// re-detection is due and there is room, then run landmarks per tracked
-    /// hand. Returns the confident landmarks.
+    /// Track hands on `frame`, re-detecting palms when due; the confident landmarks.
     pub fn step(
         &mut self,
         engine: &mut Engine,
@@ -57,8 +55,7 @@ impl HandTracker {
 
 /// One tracking step over `tracks`: palm-detect for new hands when `acquire`
 /// and there is room, then run landmarks per tracked hand from its previous
-/// crop (the cheap path). Confident hands advance; a track is dropped after
-/// two consecutive misses. Returns the confident landmarks.
+/// crop (the cheap path). Returns the confident landmarks.
 fn track_hands(
     engine: &mut Engine,
     tracks: &mut Vec<HandTrack>,
@@ -69,8 +66,7 @@ fn track_hands(
     stride: usize,
 ) -> Vec<HandLandmarks> {
     if tracks.len() < MAX_TRACKS && acquire {
-        // Touch the hand model alongside palm so it never idles out and the first gesture pays no
-        // load.
+        // Keeps the hand model from idling out, so the first gesture pays no load.
         let _ = engine.hand();
         let palms = match engine.palm() {
             Some(model) => model
@@ -103,7 +99,7 @@ fn track_hands(
                 });
                 landmarks.push(lm);
             }
-            _ if track.missed + 1 < 2 => updated.push(HandTrack {
+            _ if track.missed + 1 < MAX_MISSES => updated.push(HandTrack {
                 crop: track.crop,
                 missed: track.missed + 1,
             }),

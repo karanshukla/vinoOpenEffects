@@ -203,10 +203,10 @@ struct ModelsGroup {
 fn add_models_group(page: &adw::PreferencesPage) -> ModelsGroup {
     let group = adw::PreferencesGroup::builder().title("Models").build();
     let mut rows = HashMap::new();
-    for (id, name, purpose) in BUNDLED_MODELS {
+    for model in BUNDLED_MODELS {
         let row = adw::ActionRow::builder()
-            .title(*name)
-            .subtitle(*purpose)
+            .title(model.name)
+            .subtitle(model.purpose)
             .build();
         let pill = gtk::Label::builder()
             .label("Checking…")
@@ -215,7 +215,7 @@ fn add_models_group(page: &adw::PreferencesPage) -> ModelsGroup {
         row.add_suffix(&pill);
         unsafe { row.set_data("pill", pill) };
         group.add(&row);
-        rows.insert(*id, row);
+        rows.insert(model.id, row);
     }
     group.add(&delete_models_row());
     page.add(&group);
@@ -528,13 +528,12 @@ mod widget_tests {
             let models = add_models_group(&page);
             assert_eq!(models.group.title(), "Models");
             assert_eq!(models.rows.len(), BUNDLED_MODELS.len());
-            for (id, name, purpose) in BUNDLED_MODELS {
-                let row = &models.rows[id];
-                assert_eq!(row.title(), *name);
-                // The constants are Pango markup; libadwaita versions differ on whether
-                // the row hands it back escaped.
+            for model in BUNDLED_MODELS {
+                let row = &models.rows[model.id];
+                assert_eq!(row.title(), model.name);
+                // libadwaita versions differ on whether the row hands markup back escaped.
                 let shown = row.subtitle().unwrap();
-                assert_eq!(without_entities(&shown), without_entities(purpose));
+                assert_eq!(without_entities(&shown), without_entities(model.purpose));
             }
             assert_eq!(group_titles(&page), ["Models"]);
         });

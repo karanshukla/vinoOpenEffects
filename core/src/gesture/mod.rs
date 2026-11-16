@@ -1,9 +1,6 @@
-//! Rule-based hand-gesture classifier — pure geometry on the 21 MediaPipe hand
-//! landmarks, no model. Recognizes the reaction gestures: thumbs up, thumbs
-//! down, a two-hand heart, and an open-palm wave. Operating on landmarks (not
-//! pixels) makes this lighting- and background-invariant and trivially
-//! unit-testable. A wave is keyed off a single open-palm frame; the pipeline's
-//! hold-to-confirm debounce supplies the temporal gate.
+//! Rule-based gesture classifier on the 21 MediaPipe hand landmarks: thumbs
+//! up, thumbs down, a two-hand heart, and an open palm (wave). Each call
+//! classifies one frame; the detector's hold-to-confirm debounce does the rest.
 //!
 //! Landmark indices (MediaPipe): 0 wrist; 1-4 thumb (CMC,MCP,IP,TIP);
 //! 5-8 index; 9-12 middle; 13-16 ring; 17-20 pinky. Coordinates are normalized
@@ -50,8 +47,7 @@ pub fn classify(hands: &[HandLandmarks]) -> Option<Gesture> {
         .find_map(|h| thumb_gesture(&h.points).or_else(|| open_palm(&h.points)))
 }
 
-/// An open palm (all four fingers and the thumb extended) → wave. Direction is
-/// irrelevant; the pipeline debounce turns a held open hand into one reaction.
+/// An open palm (all four fingers and the thumb extended) → wave.
 fn open_palm(p: &[P; 21]) -> Option<Gesture> {
     if palm_width(p) < 1e-4 {
         return None;

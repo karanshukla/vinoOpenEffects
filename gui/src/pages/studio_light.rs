@@ -1,10 +1,5 @@
-//! Studio Light card: the effect switch in the header, then an "On you"
-//! section (intensity, brightness, contrast) and a "Behind you" section
-//! (background brightness). The lift is applied to the person only
-//! (foreground) and the background brightness to the complementary area
-//! (inverted mask). An "Auto light" switch and strength slider drive the
-//! NPU-only low-light model, insensitive without an NPU. Turning the switch
-//! off disables the sliders.
+//! Studio Light card: "On you" and "Behind you" sliders, and Auto light,
+//! which stays insensitive without an NPU.
 
 use std::cell::Cell;
 
@@ -234,6 +229,21 @@ mod widget_tests {
             let expander = expander.downcast_ref::<adw::ExpanderRow>().unwrap();
             assert_eq!(expander.title(), "Studio Light");
             assert_eq!(expander.subtitle(), "Off");
+        });
+    }
+
+    #[test]
+    fn auto_light_is_sensitive_only_with_an_npu() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let widgets = build(&tx);
+            let enabled: shared::dbus::VariantMap =
+                [("enabled".to_string(), shared::dbus::bool_value(true))].into();
+            widgets.apply(&enabled);
+            for npu in [false, true] {
+                widgets.set_npu_available(npu);
+                assert_eq!(widgets.auto_light_sensitive(), npu, "npu {npu}");
+            }
         });
     }
 
