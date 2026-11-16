@@ -287,7 +287,7 @@ impl DaemonState {
     }
 
     /// False for an unknown `id.key` or a value of the wrong type; out-of-range numbers are
-    /// clamped, as `tests::set_param_clamps_out_of_range_values` pins.
+    /// clamped (pinned by `tests::set_param_clamps_out_of_range_values`).
     pub fn set_param(&mut self, id: &str, key: &str, value: &OwnedValue) -> bool {
         let effects = &mut self.app.effects;
         match (id, key) {

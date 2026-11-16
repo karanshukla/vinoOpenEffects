@@ -11,20 +11,15 @@ use adw::prelude::*;
 
 use crate::dbus_client::{CmdTx, GuiCommand};
 
-/// Trailing debounce for slider drags: one `SetParam` per pause in movement
-/// instead of one per tick. Every call makes the daemon save config to disk,
-/// reapply the pipeline, and broadcast `EffectChanged`, so an undebounced
-/// drag floods it with hundreds of round trips.
+/// Trailing debounce for slider drags: one `SetParam` per pause, since each
+/// makes the daemon save, reapply the pipeline and broadcast.
 const SLIDER_DEBOUNCE: Duration = Duration::from_millis(120);
-/// How long after the user last moved a slider daemon echoes are ignored.
-/// An `EffectChanged` echo is stale relative to a drag in progress; applying
-/// it would snap the slider back to an older value.
+/// How long after the last move daemon echoes are ignored, so a stale echo
+/// can't snap a slider back mid-drag.
 const SLIDER_ECHO_HOLDOFF: Duration = Duration::from_millis(1000);
 
-/// An `AdwToggleGroup` (built by [`toggle_row`]) whose selection change is
-/// forwarded as a string value.
-/// State sync goes through [`ToggleCtl::set_value`], which blocks the change
-/// handler so it doesn't echo back to the daemon.
+/// An `AdwToggleGroup` (from [`toggle_row`]) forwarding its selection.
+/// [`ToggleCtl::set_value`] blocks the handler, so state sync doesn't echo.
 pub struct ToggleCtl {
     pub group: adw::ToggleGroup,
     handler: glib::SignalHandlerId,
@@ -39,11 +34,8 @@ impl ToggleCtl {
     }
 }
 
-/// Build a settings row with the title/subtitle on the left and a compact,
-/// rounded segmented control on the right. `on_change` receives the active
-/// toggle's name whenever the user changes the selection. Prefer this over a
-/// full-width toggle group: it keeps related options on one line each and the
-/// row shrinks gracefully at narrow window widths.
+/// A settings row with a compact segmented control on the right;
+/// `on_change` gets the chosen toggle's name.
 pub fn toggle_row(
     title: &str,
     subtitle: &str,
@@ -73,9 +65,8 @@ pub fn toggle_row(
     (row, ctl)
 }
 
-/// A slider row paired with the signal handler for its adjustment's
-/// `value-changed` signal. State sync goes through [`SliderCtl::set_value`],
-/// which blocks the handler so daemon echoes don't loop back as new commands.
+/// A slider row. [`SliderCtl::set_value`] blocks its handler, so state sync
+/// doesn't echo.
 pub struct SliderCtl {
     adjustment: gtk::Adjustment,
     scale: gtk::Scale,
@@ -113,14 +104,8 @@ impl SliderCtl {
     }
 }
 
-/// Build a slider row: title + an exact-value spin button on the top line,
-/// optional subtitle, and a scale spanning the row underneath. The scale and
-/// spin button share one adjustment, so dragging, scrolling, typing an exact
-/// number, or stepping with the spin arrows all stay in sync. Bipolar ranges
-/// get a center tick at 0 so "neutral" is easy to find.
-///
-/// A drag/step re-arms a trailing debounce timer, so only the last value of a
-/// burst is sent as a `SetParam`; the input timestamp feeds the echo holdoff.
+/// A slider row: title and spin button, then a scale sharing its adjustment.
+/// Bipolar ranges get a tick at 0. Only the last value of a burst is sent.
 #[allow(clippy::too_many_arguments)]
 fn slider_row(
     title: &str,
@@ -310,11 +295,9 @@ pub fn section_label(text: &str) -> gtk::Label {
         .build()
 }
 
-/// One effect in the controls column: a rounded card whose header shows an
-/// icon, the effect name, a one-line summary of its current settings and its
-/// on/off switch. Clicking the header expands the card to reveal the effect's
-/// settings. State sync goes through [`EffectCard::set_on`], which blocks the
-/// switch handler so daemon echoes don't loop back as new commands.
+/// One effect's card: icon, name, summary and switch, expanding to its
+/// settings. [`EffectCard::set_on`] blocks the switch handler, so state sync
+/// doesn't echo.
 pub struct EffectCard {
     /// The `boxed-list` that draws the card; add this to the column.
     pub list: gtk::ListBox,

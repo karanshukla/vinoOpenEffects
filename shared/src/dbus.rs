@@ -17,10 +17,8 @@ pub const EFFECT_IDS: [&str; 5] = [
     "reactions",
 ];
 
-/// Canonical reaction emoji ids. The gesture-mapped ones (heart, thumbs_up,
-/// thumbs_down, wave) are recognized by the hand-gesture pipeline; the rest are
-/// shown only in the manual picker. Order is parallel to the GUI buttons and the
-/// embedded emoji PNGs.
+/// Reaction ids. Gestures trigger heart, thumbs_up, thumbs_down and wave; the
+/// rest are manual only. The GUI buttons and the embedded PNGs follow this order.
 pub const REACTION_IDS: [&str; 10] = [
     "heart",
     "thumbs_up",

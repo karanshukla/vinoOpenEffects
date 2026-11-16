@@ -74,8 +74,7 @@ impl Daemon1Iface {
         Ok(())
     }
 
-    /// Tear down the pipeline and exit the process. Best-effort: the main loop
-    /// performs the actual shutdown + clean exit when it receives the signal.
+    /// Ask the main loop to tear down the pipeline and exit.
     async fn quit(&self) -> fdo::Result<()> {
         let _ = self.shutdown_tx.send(()).await;
         Ok(())
@@ -253,8 +252,7 @@ impl Effects1Iface {
         self.state.read().await.bypass()
     }
 
-    /// Fire a one-shot reaction burst. Stateless: no config is changed and no
-    /// signal is emitted — it just hands the pipeline a trigger.
+    /// Fire a reaction burst; changes no config and emits no signal.
     async fn trigger_reaction(&self, id: &str) -> fdo::Result<()> {
         if !shared::dbus::REACTION_IDS.contains(&id) {
             return Err(fdo::Error::InvalidArgs(format!("unknown reaction '{id}'")));

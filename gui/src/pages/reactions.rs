@@ -1,10 +1,5 @@
-//! Reactions card: the header switch turns on gesture-triggered reactions;
-//! inside, an always-available emoji burst picker that wraps to fit the
-//! column width.
-//!
-//! The emoji buttons send a one-shot `TriggerReaction` regardless of the
-//! switch; the switch enables the hand-gesture pipeline that fires the matching
-//! burst automatically.
+//! Reactions card: the switch turns on gesture triggers; the emoji buttons
+//! fire a burst whatever it says.
 
 use adw::prelude::*;
 use shared::dbus::{VariantMap, value_as_bool};
@@ -37,15 +32,15 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         .row_spacing(8)
         .column_spacing(8)
         .build();
-    for (id, glyph, tooltip) in REACTION_BUTTONS {
+    for reaction in REACTION_BUTTONS {
         let button = gtk::Button::builder()
-            .label(*glyph)
-            .tooltip_text(*tooltip)
+            .label(reaction.glyph)
+            .tooltip_text(reaction.tooltip)
             .css_classes(["oe-emoji-btn"])
             .build();
-        button.update_property(&[gtk::accessible::Property::Label(tooltip)]);
+        button.update_property(&[gtk::accessible::Property::Label(reaction.tooltip)]);
         let cmd_tx = cmd_tx.clone();
-        let id = (*id).to_string();
+        let id = reaction.id.to_string();
         button.connect_clicked(move |_| {
             let _ = cmd_tx.send(GuiCommand::TriggerReaction { id: id.clone() });
         });

@@ -375,7 +375,6 @@ fn every_control_has_an_accessible_name_on_gtk_thread() {
         preferences::build_page(&cmd_tx, Rc::new(RefCell::new(GuiConfig::default())));
     audit.check(page.upcast_ref());
 
-    // Guards against the walk silently finding nothing.
     assert!(
         audit.controls >= 40,
         "only {} controls found",
@@ -386,13 +385,4 @@ fn every_control_has_an_accessible_name_on_gtk_thread() {
         "accessibility problems:\n{}",
         audit.problems.join("\n")
     );
-
-    // GTK runs on one thread per process, so this rides along here.
-    let enabled: shared::dbus::VariantMap =
-        [("enabled".to_string(), shared::dbus::bool_value(true))].into();
-    studio_light.apply(&enabled);
-    for npu in [false, true] {
-        studio_light.set_npu_available(npu);
-        assert_eq!(studio_light.auto_light_sensitive(), npu, "npu {npu}");
-    }
 }

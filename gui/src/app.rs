@@ -257,11 +257,9 @@ fn spawn_update_loop(
     });
 }
 
-/// Press-and-hold on `button` (or holding Space/Enter while it has focus)
-/// bypasses every effect until release, so the preview shows the untouched
-/// camera. Does nothing while effects are already off. The gesture claims the
-/// press so the release always reaches it, even when the pointer leaves the
-/// button.
+/// Holding `button` (or Space/Enter on it) bypasses every effect until
+/// release. The gesture claims the press, so the release reaches it even off
+/// the button.
 fn wire_compare(
     button: &gtk::Button,
     bypass_switch: &gtk::Switch,
@@ -521,25 +519,34 @@ fn apply_effect(w: &Widgets, id: &str, params: &VariantMap) {
     }
 }
 
-/// Banners are for states the user should act on; running/idle/starting are
-/// normal so the banner stays hidden for them.
-fn apply_status_banner(w: &Widgets, status: &str) {
-    // (title, whether Start can fix it); "disconnected" reconnects on its own.
-    let message = match status {
-        "stopped" => Some(("Virtual camera stopped", true)),
-        "error" => Some(("Virtual camera stopped by an error", true)),
-        "disconnected" => Some(("Can't reach the effects daemon", false)),
-        _ => None,
+/// A daemon state the user should act on.
+struct StatusBanner {
+    title: &'static str,
+    /// Whether the banner offers Start; "disconnected" reconnects on its own.
+    startable: bool,
+}
+
+/// The banner for `status`; `None` for the normal states.
+fn status_banner(status: &str) -> Option<StatusBanner> {
+    let (title, startable) = match status {
+        "stopped" => ("Virtual camera stopped", true),
+        "error" => ("Virtual camera stopped by an error", true),
+        "disconnected" => ("Can't reach the effects daemon", false),
+        _ => return None,
     };
-    match message {
-        Some((text, startable)) => {
-            let changed = !w.banner.is_revealed() || w.banner.title() != text;
-            w.banner.set_title(text);
+    Some(StatusBanner { title, startable })
+}
+
+fn apply_status_banner(w: &Widgets, status: &str) {
+    match status_banner(status) {
+        Some(StatusBanner { title, startable }) => {
+            let changed = !w.banner.is_revealed() || w.banner.title() != title;
+            w.banner.set_title(title);
             w.banner.set_button_label(startable.then_some("Start"));
             w.banner.set_revealed(true);
             if changed {
                 w.banner
-                    .announce(text, gtk::AccessibleAnnouncementPriority::High);
+                    .announce(title, gtk::AccessibleAnnouncementPriority::High);
             }
         }
         None => w.banner.set_revealed(false),
@@ -697,8 +704,7 @@ fn apply_cameras(w: &Widgets, cameras: &[CameraInfo], active: &str) {
     dropdown.unblock_signal(&w.preview.camera_handler);
 }
 
-/// `GetAllState()` returns keys prefixed with `"{effect_id}."`; strip the prefix
-/// so the result matches an `EffectChanged` payload's shape.
+/// `id`'s params from `GetAllState()`, unprefixed like an `EffectChanged` payload.
 fn extract_effect_params(state: &VariantMap, id: &str) -> VariantMap {
     let prefix = format!("{id}.");
     state

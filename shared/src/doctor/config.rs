@@ -26,8 +26,8 @@ const EFFECT_KEYS: &[(&str, &[&str])] = &[
     ("reactions", &["enabled"]),
 ];
 
-/// Keys in `state.toml` the daemon would ignore, as dotted paths.
-/// `tests::every_key_the_daemon_writes_is_known` keeps the tables in step with `AppState`.
+/// Keys in `state.toml` the daemon would ignore, as dotted paths. The tables
+/// follow `AppState` (pinned by `tests::every_key_the_daemon_writes_is_known`).
 pub fn find_unknown_keys(value: &toml::Value) -> Vec<String> {
     let mut unknown = Vec::new();
     let toml::Value::Table(top) = value else {

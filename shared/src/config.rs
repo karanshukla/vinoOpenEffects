@@ -5,9 +5,7 @@ use crate::error::ConfigError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppState {
-    /// Master passthrough switch. When true, every effect is bypassed and the
-    /// camera passes through untouched, regardless of per-effect `enabled`
-    /// flags (which are preserved so flipping this back off restores them).
+    /// Bypass every effect, keeping their own `enabled` flags for when it's off.
     #[serde(default)]
     pub bypass: bool,
     #[serde(default)]
@@ -131,11 +129,11 @@ pub struct StudioLightState {
     pub enabled: bool,
     /// 0–100
     pub intensity: u8,
-    /// -1.0..1.0 mapped to the masked brightness lift in `oe_effects`
+    /// -100..100, the subject's brightness lift
     pub brightness: i8,
-    /// 0–100 mapped to the masked contrast in `oe_effects`
+    /// 0–100, the subject's contrast
     pub contrast: u8,
-    /// -100..100 mapped to background brightness in `oe_effects`
+    /// -100..100, the background's brightness
     pub bg_brightness: i8,
     /// NPU-only low-light model. Silently does nothing without an NPU.
     #[serde(default)]

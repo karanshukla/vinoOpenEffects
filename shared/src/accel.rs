@@ -50,7 +50,7 @@ pub fn probe_in(dir: &Path, sysfs: &Path) -> Nodes {
 fn is_intel(class_dir: &Path) -> bool {
     match std::fs::read_link(class_dir.join("device/driver")) {
         Ok(driver) => driver.file_name().is_some_and(|n| n == INTEL_DRIVER),
-        // No sysfs to read (some containers): count it, as before drivers were checked.
+        // No sysfs to read (some containers): count it.
         Err(_) => true,
     }
 }

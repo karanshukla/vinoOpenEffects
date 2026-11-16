@@ -41,19 +41,16 @@ impl PipelineFormat {
         self.width
     }
 
-    /// I420 frame size = W*H (Y) + 2 * (W/2 * H/2) (U,V) = W*H*3/2.
+    /// I420 frame size: a full Y plane plus quarter-size U and V planes.
     pub fn frame_size(&self) -> usize {
         (self.width as usize * self.height as usize * 3) / 2
     }
 }
 
-/// Grace period before releasing the real camera once the provide node leaves
-/// STREAMING. Consumers that go through xdg-desktop-portal (browsers) probe the
-/// node with rapid connect/disconnect blips and retry if the first frames are
-/// the warmup placeholder; tearing the capture pipeline on every blip would
-/// thrash the camera (open takes ~250 ms) and never deliver a stable stream.
-/// Holding briefly keeps the camera warm across blips while still releasing it
-/// promptly — and the LED off — when the consumer is really gone.
+/// How long the real camera stays open after the provide node leaves
+/// STREAMING. Browsers (through xdg-desktop-portal) probe the node with rapid
+/// connect/disconnect blips, and reopening the camera on each (~250 ms) would
+/// never deliver a stable stream.
 const CAPTURE_RELEASE_GRACE: Duration = Duration::from_millis(300);
 
 /// How often to look for the camera again after it failed mid-stream (unplugged),
@@ -69,15 +66,11 @@ const STALL_CHECK: Duration = Duration::from_secs(1);
 pub enum PipelineCommand {
     Start(AppState),
     Stop,
-    /// Replace the worker's stored config and push it onto the live capture
-    /// elements. Sent after any effect toggle or param change, carrying the
-    /// daemon's canonical `AppState` so the worker never re-parses per-key
-    /// values (a duplicated mapping here once let param changes go stale until
-    /// a restart).
+    /// Replace the worker's config and push it onto the live capture elements.
+    /// Carries the whole `AppState`, so the worker keeps no per-key mapping.
     ApplyEffects(AppState),
-    /// Fire a one-shot reaction burst (a [`shared::dbus::REACTION_IDS`] id) into
-    /// the live `oe_effects` element. A no-op when no capture pipeline is up
-    /// (nothing is consuming the virtual camera).
+    /// Fire a reaction burst (a [`shared::dbus::REACTION_IDS`] id); a no-op
+    /// with no capture pipeline up.
     TriggerReaction(String),
     /// Persisted choice; `VINOOPENEFFECTS_EP`, when set, still wins.
     SetInferenceProvider(shared::config::InferenceProvider),
@@ -105,17 +98,14 @@ pub enum PipelineEvent {
     },
 }
 
-/// Internal gating signal: the provide node's consumer state drives the capture
-/// pipeline's lifecycle. Emitted from the provider thread's `state_changed`.
+/// The provide node's consumer state, which opens and closes the capture pipeline.
 #[derive(Debug)]
 pub(crate) enum CaptureCmd {
     Start,
     Stop,
 }
 
-/// Everything the worker reacts to arrives on one inbox, so it can block until
-/// there is work instead of polling: a daemon command, or a consumer-state
-/// change from the provide node.
+/// The worker's one inbox, so it blocks until there is work.
 pub(crate) enum WorkerMsg {
     Command(PipelineCommand),
     Capture(CaptureCmd),

@@ -1,16 +1,7 @@
-//! Reverse-rain emoji reactions.
-//!
-//! A reaction is a one-shot *burst* of emoji sprites that float up from the
-//! bottom of the frame to the top — like rain in reverse — each with a random
-//! horizontal position, rise speed, size, tilt, and a gentle side-to-side sway.
-//! Bursts are triggered either manually (a GUI button / the `TriggerReaction`
-//! D-Bus method) or, when the reactions effect is enabled, automatically by the
-//! hand-gesture pipeline.
-//!
-//! The system is owned by [`Effects`](super::Effects), advanced and composited
-//! once per frame from `Effects::process` after every other effect so the
-//! emojis always sit on top of the final image. Animation timing is in
-//! frames (the camera runs at ~`FPS` = 30); no PTS plumbing is needed.
+//! Reverse-rain emoji reactions: a burst of sprites floating up from the
+//! bottom of the frame with random position, speed, size, tilt and sway,
+//! triggered by the GUI, the `TriggerReaction` D-Bus method or a gesture.
+//! Composited last in `Effects::process`; timing is in frames.
 
 use shared::dbus::REACTION_IDS;
 use tracing::warn;
@@ -107,8 +98,7 @@ struct Particle {
     spawn_frame: u64,
 }
 
-/// Tiny deterministic PRNG (xorshift64*) — avoids pulling in a `rand`
-/// dependency and keeps tests reproducible.
+/// xorshift64*: deterministic, so tests are reproducible, and no `rand` dependency.
 struct XorShift64(u64);
 
 impl Default for XorShift64 {

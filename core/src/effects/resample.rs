@@ -1,3 +1,11 @@
+/// Rec. 601 luma of the RGBA pixel at the start of `px`, scaled by 256.
+pub(crate) fn luma_x256(px: &[u8]) -> u32 {
+    77 * px[0] as u32 + 150 * px[1] as u32 + 29 * px[2] as u32
+}
+
+/// The largest [`luma_x256`]: 255 × 256.
+pub(crate) const LUMA_X256_MAX: f32 = 65280.0;
+
 /// Bilinearly sample the RGBA pixel at fractional `fx`,`fy` (clamped to the
 /// image) into `out`.
 pub(crate) fn sample_bilinear(src: &[u8], w: usize, h: usize, fx: f32, fy: f32, out: &mut [u8]) {

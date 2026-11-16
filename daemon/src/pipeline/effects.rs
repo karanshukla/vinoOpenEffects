@@ -4,18 +4,9 @@ use gstreamer as gst;
 
 use shared::config::AppState;
 
-/// Build the effects bin:
-///
-/// `queue → videoconvert → RGBA caps → oe_effects → videoconvert → videoscale`
-///
-/// All effects (studio light, portrait blur, background replace, center stage)
-/// live in the single `oe_effects` CPU filter, which runs on RGBA system memory
-/// — hence the `videoconvert` + RGBA capsfilter wrapping it. Studio Light used
-/// to be a stock `videobalance`, but it now runs inside `oe_effects` so the
-/// brightness/contrast lift can be masked to the person via selfie segmentation
-/// (sharing the same mask as portrait blur / bg replace). The trailing
-/// `videoconvert`/`videoscale` convert back toward the I420 output the appsink
-/// and provide node expect.
+/// The effects bin: `queue → videoconvert → RGBA caps → oe_effects →
+/// videoconvert → videoscale`. Every effect runs in `oe_effects` on RGBA
+/// system memory; the trailing converters head back to the I420 output.
 pub fn build_effects_bin(app: &AppState) -> Result<gst::Bin> {
     let bin = gst::Bin::new();
 
@@ -48,8 +39,7 @@ pub fn build_effects_bin(app: &AppState) -> Result<gst::Bin> {
         .context("create videoscale")?;
 
     apply_app_state_to_elements(&effects, app);
-    // Kept out of apply_app_state_to_elements, which runs per effect change: setting the provider
-    // reloads every model.
+    // Not in apply_app_state_to_elements, which runs per change: this reloads every model.
     let provider = oe_core::inference::effective_ep(app.inference.provider.as_str());
     if effects.property::<String>("inference-provider") != provider {
         effects.set_property("inference-provider", provider);
@@ -218,8 +208,7 @@ mod tests {
         assert!(effects.property::<bool>("reactions-enabled"));
     }
 
-    /// Master bypass forces every effect's `enabled` property false even when the
-    /// stored per-effect config has them on — the element becomes a passthrough.
+    /// Master bypass turns every effect off whatever its own setting.
     #[test]
     fn bypass_forces_all_effects_off() {
         gst::init().unwrap();
@@ -249,9 +238,7 @@ mod tests {
         assert!(effects.property::<bool>("center-stage-enabled"));
     }
 
-    /// A manual `trigger-reaction` must process frames even with every effect
-    /// disabled: it flips the element out of passthrough, renders the burst, and
-    /// restores passthrough once it drains — all without erroring the pipeline.
+    /// A manual burst leaves passthrough, renders, and returns to it.
     #[test]
     fn trigger_reaction_processes_frames_with_effects_off() {
         if !effects_available() || gst::ElementFactory::find("videotestsrc").is_none() {
@@ -306,10 +293,7 @@ mod tests {
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
-    /// End-to-end smoke test of the hot path: push real frames through the
-    /// effects bin with portrait blur + center stage enabled, exercising
-    /// `oe_effects::transform_frame_ip` (segmentation, composite, crop) on the
-    /// GStreamer streaming thread. Runs to EOS without error.
+    /// Real frames through the bin with blur and center stage on, to EOS.
     #[test]
     fn effects_bin_processes_frames() {
         if !effects_available() || gst::ElementFactory::find("videotestsrc").is_none() {
@@ -365,10 +349,7 @@ mod tests {
         assert!(saw_eos, "pipeline did not reach EOS within timeout");
     }
 
-    /// With reactions enabled, the gesture pipeline (palm + hand inference)
-    /// runs on each cadence frame. videotestsrc has no hands, so nothing
-    /// triggers — this just asserts the integration runs to EOS without error,
-    /// whether or not the hand models are installed (fail-memo path).
+    /// The gesture pipeline runs to EOS, hand models installed or not.
     #[test]
     fn reactions_enabled_runs_gesture_pipeline() {
         if !effects_available() || gst::ElementFactory::find("videotestsrc").is_none() {

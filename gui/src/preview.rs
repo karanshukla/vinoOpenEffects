@@ -1,14 +1,7 @@
-//! The live preview: the large framed video that leads the main window. It
-//! consumes the daemon's virtual-camera node
-//! (`pipewiresrc target-object=vinoopeneffects`) and renders it into a
-//! `gtk::Picture` via `gtk4paintablesink`. The pipeline runs only while the
-//! preview is mapped, so hiding or closing the window releases the real
-//! camera (the daemon's on-demand model keeps the camera open only while a
-//! consumer is linked).
-//!
-//! Floating over the video: the physical-camera picker (top left), a "live"
-//! pill once frames flow (top right), a hold-to-compare button (bottom left)
-//! and the virtual camera's node name (bottom right).
+//! The live preview: the daemon's virtual camera through `pipewiresrc` into a
+//! `gtk::Picture`. The pipeline runs only while the preview is mapped, so
+//! hiding the window releases the real camera. Floating over it: the camera
+//! picker, a "live" pill, the compare button and the node name.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -52,8 +45,7 @@ pub struct Preview {
     /// Bumped on every start/stop so a stale no-frames timer does nothing.
     attempt: Cell<u32>,
     bus_watch: RefCell<Option<gst::bus::BusWatchGuard>>,
-    /// Built lazily on first map and reused; rebuilt if a previous attempt
-    /// failed (e.g. the daemon node was not up yet).
+    /// Built on first map and reused; rebuilt after a failed attempt.
     pipeline: RefCell<Option<gst::Pipeline>>,
 }
 
@@ -338,8 +330,7 @@ impl Preview {
         }
     }
 
-    /// Surface a pipeline error (typically PipeWire's "target not found")
-    /// right away instead of leaving the preview stuck on "Connecting…".
+    /// Show a pipeline error (usually "target not found") instead of "Connecting…".
     fn watch_errors(self: &Rc<Self>, pipeline: &gst::Pipeline) {
         let Some(bus) = pipeline.bus() else { return };
         let weak = Rc::downgrade(self);

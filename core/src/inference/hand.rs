@@ -1,13 +1,9 @@
 //! Two-stage MediaPipe hand pipeline used by the reactions gesture trigger:
 //! [`PalmDetector`] (SSD over the whole frame) finds palms, then
 //! [`HandLandmarker`] regresses 21 keypoints from a square crop. Both are
-//! OpenCV-Zoo ONNX exports (`*_mediapipe_2023feb.onnx`), loaded the same way as
-//! [`super::engine`]'s `SelfieSeg`/`YuNet`.
-//!
-//! v1 keeps the crop axis-aligned (no rotation normalization) — fine for the
-//! upright thumbs-up / thumbs-down / heart gestures we classify; extreme angles
-//! degrade gracefully. Decode math mirrors the Zoo reference `mp_palmdet.py` /
-//! `mp_handpose.py`, reduced to what the gesture classifier needs.
+//! OpenCV-Zoo ONNX exports (`*_mediapipe_2023feb.onnx`); the decode follows
+//! the Zoo's `mp_palmdet.py` / `mp_handpose.py`. The crop is never rotated,
+//! which the upright gestures don't need.
 
 use anyhow::{Context, Result};
 use ort::session::Session;
@@ -212,8 +208,7 @@ impl PalmDetector {
         let tensor = Tensor::from_array(([1i64, PALM_SIZE as i64, PALM_SIZE as i64, 3], input))?;
         let outputs = self.session.run(ort::inputs![INPUT => tensor])?;
 
-        // tf2onnx's Identity/Identity_1 naming doesn't say which output is which, so bind by
-        // length.
+        // tf2onnx names the outputs Identity/Identity_1, so bind by length.
         let mut regressors: Option<Vec<f32>> = None;
         let mut scores: Option<Vec<f32>> = None;
         for name in ["Identity", "Identity_1"] {

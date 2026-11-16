@@ -67,8 +67,7 @@ impl Background {
     }
 }
 
-/// `out = fg·m + bg·(1-m)` against a full-resolution background buffer
-/// (user image, already cached at frame size).
+/// `out = fg·m + bg·(1-m)` against a background at frame size.
 fn composite_full(fg: &mut [u8], bg: &[u8], lut: &[u8]) {
     for (i, &m) in lut.iter().enumerate() {
         if m == 255 {
@@ -82,8 +81,7 @@ fn composite_full(fg: &mut [u8], bg: &[u8], lut: &[u8]) {
     }
 }
 
-/// Composite a solid color behind the subject — no background buffer is
-/// ever materialized.
+/// Composite a solid color behind the subject.
 fn composite_color(fg: &mut [u8], color: [u8; 4], lut: &[u8]) {
     for (px, &m) in fg.as_chunks_mut::<4>().0.iter_mut().zip(lut) {
         if m == 255 {
@@ -96,15 +94,10 @@ fn composite_color(fg: &mut [u8], color: [u8; 4], lut: &[u8]) {
     }
 }
 
-/// Composite the low-res, background-weighted blurred background behind the
-/// subject, bilinearly upsampling it on the fly (no full-resolution
-/// intermediate buffer). The `low` buffer holds premultiplied color in RGB
-/// and the summed background weight in alpha (see `downsample_masked`); the
-/// true background color is recovered as `rgb·255/alpha` — a weighted mean
-/// that excludes the subject, so no person color halos the edge. Where the
-/// blur neighborhood was entirely subject (alpha ≈ 0) there is no
-/// background to show, but such pixels are deep inside the person (mask ≈
-/// 255) and contribute almost nothing to the blend.
+/// Composite the low-res blurred background behind the subject, upsampling
+/// it on the fly. `low` is premultiplied by background weight (see
+/// `downsample_masked`), so `rgb·255/alpha` is the background's own color;
+/// where alpha is 0 the pixel is deep inside the subject and keeps its own.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn composite_low(
     fg: &mut [u8],

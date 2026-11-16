@@ -116,8 +116,7 @@ fn golden_bg_image() -> tempfile::NamedTempFile {
     file
 }
 
-/// Characterization of the whole effect chain on synthetic frames. The
-/// digests pin today's output byte for byte; a pure move or refactor
+/// The digests pin today's output byte for byte; a pure move or refactor
 /// must leave them unchanged.
 #[test]
 fn golden_frames_are_unchanged() {
@@ -276,7 +275,6 @@ fn blur_hides_the_frame_until_the_mask_exists() {
 
 #[test]
 fn a_failed_model_still_turns_blur_off() {
-    // Not loading but gone for good: logged as disabled, frame untouched.
     let mut fx = offline_effects(Settings {
         blur_enabled: true,
         ..Settings::default()
@@ -288,7 +286,6 @@ fn a_failed_model_still_turns_blur_off() {
 
 #[test]
 fn passthrough_drops_the_denoise_history() {
-    // Passthrough stops `process` (and the frame count), so the frame after it looks continuous.
     let mut fx = Effects::default();
     let mut img = vec![100, 100, 100, 255];
     fx.denoise.apply(1, &mut img, 1, 1);

@@ -49,10 +49,8 @@ impl MigrationReport {
     }
 }
 
-/// Migrate legacy `openeffects` state under the real XDG config and data dirs.
-///
-/// Call first thing at startup in the daemon and GUI, before any config or
-/// model lookup, so an upgrade picks up existing state without user action.
+/// Migrate legacy `openeffects` state under the XDG dirs. Call before any
+/// config or model lookup.
 pub fn migrate_legacy_paths() -> MigrationReport {
     match (dirs::config_dir(), dirs::data_dir()) {
         (Some(config), Some(data)) => migrate_in(&config, &data),

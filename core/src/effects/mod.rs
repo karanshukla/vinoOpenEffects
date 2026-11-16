@@ -1,39 +1,10 @@
-//! Every ML-driven effect, run over tight RGBA frames in system memory:
-//!
-//! 1. **Studio Light** — a `videobalance`-style brightness/contrast lift
-//!    blended by the person mask, so only the subject is lit (the background
-//!    keeps its original exposure).
-//! 2. **Portrait blur** / **Background replace** — `out = fg·mask + bg·(1-mask)`
-//!    where `bg` is a user image/color, or — for blur — a box blur of the
-//!    frame *weighted by the background mask* so the subject's own pixels are
-//!    excluded from it (otherwise the person's colors bleed outward under the
-//!    blur and leave a halo ring around the composited subject).
-//! 3. **Center Stage** — a YuNet face box drives an EMA-smoothed, deadzoned
-//!    crop+zoom that keeps the face centered without distorting the aspect ratio.
-//!
-//! Studio Light, Portrait blur and Background replace all need the selfie
-//! segmentation mask; it is segmented **once per frame** and shared by all
-//! three, so enabling several together costs no extra ONNX work.
-//!
-//! Two paths, chosen per frame:
-//!
-//! - **Center stage on**: framing is computed on the full frame, then the crop
-//!   ROI is extracted and the masked effects run on *just that ROI* (the only
-//!   pixels the zoom keeps) before it's upscaled to the output. Compositing the
-//!   discarded border would be wasted work, so center stage is the source of
-//!   truth for the mask canvas.
-//! - **Center stage off**: the masked effects run over the full frame.
-//!
-//! Energy: selfie segmentation (the per-frame ONNX cost) runs on a cadence
-//! (`SEG_INTERVAL`) with the mask reused in between, and YuNet detection on a
-//! coarser one (`FACE_INTERVAL`) — the reframe deadzone absorbs the staleness.
-//!
-//! Before any of them, a temporal denoise (see `denoise`) cleans the frame
-//! whenever an effect would amplify its noise.
-//!
-//! 4. **Reactions** — reverse-rain emoji bursts (see [`reactions`]), composited
-//!    last over the final canvas. Triggered manually or, when enabled,
-//!    automatically by the hand-gesture pipeline.
+//! Every ML-driven effect, run over tight RGBA frames in system memory, in
+//! order: temporal denoise (when an effect would amplify noise), auto light,
+//! Center Stage, the masked effects (Studio Light, then portrait blur or
+//! background replace), and reactions on top. The person mask is segmented
+//! once per frame on a cadence and shared by every masked effect. With
+//! Center Stage on, the masked effects run on just the crop it keeps.
+//! docs/architecture.md has the reasoning.
 
 mod auto_light;
 mod blur;
@@ -77,7 +48,6 @@ pub struct Effects {
     auto_light: AutoLightState,
     denoise: Denoise,
     gestures: GestureDetector,
-    /// Reverse-rain emoji particle system (manual + gesture triggers).
     reactions: Reactions,
     /// An all-background mask, for hiding the frame until a real one exists.
     hidden: Vec<u8>,
@@ -121,8 +91,7 @@ impl Effects {
     pub fn process(&mut self, img: &mut [u8], w: usize, h: usize) {
         self.frame = self.frame.wrapping_add(1);
 
-        // Gestures must see the original frame, before auto light and the center-stage crop rewrite
-        // it in place.
+        // Before auto light and the crop rewrite the frame in place.
         if self.settings.reactions_enabled
             && let Some(g) = self.gestures.step(&mut self.engine, self.frame, img, w, h)
         {
@@ -150,8 +119,7 @@ impl Effects {
         }
     }
 
-    /// Center stage: decide framing on the full frame, then crop to the ROI and
-    /// run blur / bg-replace on just that ROI before upscaling it to the output.
+    /// Frame on the full image, then run the masked effects on just the crop.
     fn center_stage(&mut self, img: &mut [u8], w: usize, h: usize) {
         let crop = self
             .center_stage
@@ -170,16 +138,16 @@ impl Effects {
         upscale_roi(img, w, h, &roi);
     }
 
-    /// Run every mask-gated effect over a tight RGBA buffer: segment **once**,
-    /// then (in order) studio-light the person, and blur / bg-replace the
-    /// background. `is_roi` selects the mask coordinate space (full vs crop ROI).
+    /// Segment once, then studio-light the person and blur or replace the
+    /// background. `is_roi`: `img` is the center-stage crop, not the frame.
     fn masked_effects(&mut self, img: &mut [u8], w: usize, h: usize, is_roi: bool) {
         self.mask
             .ensure(&mut self.engine, self.frame, img, w, h, w * 4, is_roi);
         self.mask.refine(img, w, h);
         let Some(lut) = self.mask.lut(w, h) else {
-            // No mask yet. `golden_tests::blur_hides_the_frame_until_the_mask_exists` and
-            // `a_failed_model_still_turns_blur_off` pin both sides; docs/architecture.md says why.
+            // No mask yet: hide the frame unless the model failed for good
+            // (pinned by `golden_tests::blur_hides_the_frame_until_the_mask_exists`,
+            // `golden_tests::a_failed_model_still_turns_blur_off`).
             if self.settings.needs_composite() && !self.engine.selfie_failed() {
                 self.hidden.clear();
                 self.hidden.resize(w * h, 0);

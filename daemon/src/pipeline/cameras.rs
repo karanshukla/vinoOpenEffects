@@ -8,9 +8,8 @@ use super::probe::PIPEWIRE_NODE_NAME;
 
 #[derive(Debug, Clone)]
 pub struct CameraInfo {
-    /// Stable identifier we persist into `app.camera.selected`.
-    /// - PipeWire: `node.name` (e.g. `v4l2_input.pci-...`)
-    /// - V4L2:     `/dev/videoN`
+    /// The stable id saved as `app.camera.selected`: PipeWire's `node.name`,
+    /// or `/dev/videoN`.
     pub id: String,
     pub name: String,
     pub path: String,
@@ -94,12 +93,9 @@ fn video_device_number(path: &str) -> Option<u32> {
     path.strip_prefix("/dev/video")?.parse().ok()
 }
 
-/// Probe the camera's supported modes (DeviceMonitor caps — no device open, no
-/// LED) and pick the mode the virtual camera should advertise. The capture
-/// pipeline pins this exact mode on the source, so frames are never rescaled
-/// and the aspect ratio of the physical feed is preserved.
-///
-/// Preference order:
+/// The mode the virtual camera advertises, from the camera's caps (without
+/// opening it). The capture pipeline pins it on the source, so frames are
+/// never rescaled. Preference order:
 /// 1. the default mode (1280x720) if the camera supports it natively
 /// 2. the mode with the area closest to the default, among modes >= 24 fps
 /// 3. the mode with the area closest to the default, regardless of fps
@@ -195,10 +191,9 @@ fn better_fps(a: i32, b: i32) -> bool {
     d(a) < d(b) || (d(a) == d(b) && a < b)
 }
 
-/// Build a GStreamer source element for the given camera. We always construct
-/// the element ourselves (rather than calling `gst::Device::create_element`)
-/// so we control which property is set: `target-object` with the stable
-/// `node.name`, not a serial that gets invalidated when nodes reincarnate.
+/// A source element for `info`, built by hand rather than with
+/// `gst::Device::create_element` so `target-object` is the stable `node.name`,
+/// not a serial that changes when the node is recreated.
 pub fn build_source_for(info: &CameraInfo) -> Result<gst::Element> {
     match info.api.as_str() {
         "pipewire" => {
@@ -230,10 +225,9 @@ pub fn build_source_for(info: &CameraInfo) -> Result<gst::Element> {
 }
 
 /// Controls `v4l2src` applies when it opens the camera. Another app can leave
-/// `exposure_dynamic_framerate` on (the driver default is off), which lets
-/// auto-exposure stretch frames past the frame interval in dim light, so the
-/// feed starts at 30 fps and sags. Chrome resets it on open for the same reason.
-/// A camera without the control just logs a GStreamer warning.
+/// `exposure_dynamic_framerate` on (the driver default is off), letting
+/// auto-exposure drop the frame rate in dim light; Chrome resets it on open
+/// too. A camera without the control just logs a GStreamer warning.
 fn fixed_framerate_controls() -> gst::Structure {
     gst::Structure::builder("controls")
         .field("exposure_dynamic_framerate", 0i32)
@@ -263,8 +257,7 @@ fn device_to_info(device: &gst::Device) -> Option<CameraInfo> {
         .unwrap_or(display);
 
     let (api, id, path) = if device_api == "v4l2" && !v4l2_path.is_empty() {
-        // v4l2src on /dev/videoN needs no PipeWire camera-access grant, whichever provider surfaced
-        // the device.
+        // v4l2src needs no PipeWire camera-access grant, whichever provider found the device.
         (String::from("v4l2"), v4l2_path.clone(), v4l2_path)
     } else if let Some(name) = node_name.clone() {
         (String::from("pipewire"), name, v4l2_path)
@@ -282,12 +275,9 @@ fn device_to_info(device: &gst::Device) -> Option<CameraInfo> {
     })
 }
 
-/// Collapse duplicates surfaced by both `pipewiredeviceprovider` and
-/// `v4l2deviceprovider`. Two entries are dups if they share a non-empty
-/// `path`. Prefer the v4l2 entry: PipeWire camera nodes typically require
-/// xdg-desktop-portal / WirePlumber-granted access for non-confined clients
-/// (`pipewiresrc` returns `target not found` without it), whereas `v4l2src`
-/// on `/dev/videoN` works against any unclaimed device.
+/// Collapse cameras both device providers found (same non-empty `path`),
+/// keeping the v4l2 entry: `pipewiresrc` needs a portal-granted camera
+/// permission (`target not found` without it), `v4l2src` doesn't.
 fn dedup(mut cams: Vec<CameraInfo>) -> Vec<CameraInfo> {
     cams.sort_by(|a, b| {
         let rank = |c: &CameraInfo| match c.api.as_str() {

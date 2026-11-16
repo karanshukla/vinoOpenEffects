@@ -2,6 +2,8 @@
 //! person mask, so only the subject is lit (the background keeps its original
 //! exposure, or gets its own brightness offset).
 
+use super::resample::luma_x256;
+
 /// Contrast-pivot smoothing (≈10 frames to 65%) and the pixel stride the
 /// subject's mean luma is sampled at.
 const STUDIO_PIVOT_ALPHA: f32 = 0.1;
@@ -15,11 +17,8 @@ const MIN_SUBJECT_COVERAGE_PCT: u64 = 1;
 pub(crate) struct StudioPivot(Option<f32>);
 
 impl StudioPivot {
-    /// This frame's contrast pivot: the subject's mean luma, sampled on a
-    /// coarse grid weighted by the mask and EMA-smoothed so it can't flicker.
-    /// Pivoting on the subject (not mid-grey) means contrast spreads tones
-    /// around how bright you actually are, instead of darkening a dim face.
-    /// Falls back to the last pivot (or 0.5) with no subject.
+    /// This frame's contrast pivot: the subject's smoothed mean luma, or the
+    /// last pivot (0.5 at first) with no subject.
     pub(crate) fn update(&mut self, img: &[u8], lut: &[u8]) -> f32 {
         match subject_mean_luma(img, lut) {
             Some(mean) => {
@@ -47,7 +46,7 @@ fn subject_mean_luma(img: &[u8], lut: &[u8]) -> Option<f32> {
         .step_by(STUDIO_PIVOT_STRIDE)
     {
         let m = m as u64;
-        let luma = (77 * px[0] as u64 + 150 * px[1] as u64 + 29 * px[2] as u64) >> 8;
+        let luma = u64::from(luma_x256(px) >> 8);
         acc += luma * m;
         weight += m;
     }

@@ -61,6 +61,21 @@ jobs:
         env:
           VINOOPENEFFECTS_REQUIRE_DISPLAY: "1"
 
+  # Every `tests::name` a comment cites is a real #[test] fn
+  # (docs/comment-style.md). Also part of `cargo test`; its own job so a
+  # broken citation is named on the PR.
+  doc-links:
+    name: Doc Links
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install stable --profile minimal
+      - *cache
+      - run: cargo test -p vinoopeneffects-shared --test doc_links
+
   core:
     runs-on: ubuntu-26.04
     timeout-minutes: 30
