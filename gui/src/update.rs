@@ -13,7 +13,7 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 
 const REPO: &str = "karanshukla/vinoOpenEffects";
-const CURRENT: &str = env!("VINOOPENEFFECTS_VERSION");
+const CURRENT: &str = shared::version::VERSION;
 
 /// What a check found.
 #[derive(Debug, PartialEq)]

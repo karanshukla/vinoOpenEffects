@@ -51,7 +51,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
     let about = adw::AboutDialog::builder()
         .application_name("vinoOpenEffects")
         .application_icon(APP_ID)
-        .version(env!("VINOOPENEFFECTS_VERSION"))
+        .version(shared::version::VERSION)
         .comments("Linux-native webcam effects engine")
         .developer_name("Karan Shukla")
         .developers(["Karan Shukla https://github.com/karanshukla"])
