@@ -243,20 +243,24 @@ jobs:
       - run: rustup toolchain install stable --profile minimal
       - *cache
       # Same archive command as release.yml, with a made-up tag; the bundle has no .git.
-      - name: Build the CLI from a source bundle and check it reports the tag
+      - name: Build the CLI from a source bundle; it reports dev unless stamped
         env:
           TAG: v9999
         run: |
           git archive --format=tar.gz --prefix="vinoopeneffects-$TAG/" \
-            --add-virtual-file="vinoopeneffects-$TAG/VERSION:$TAG" \
             -o "$RUNNER_TEMP/bundle.tar.gz" HEAD
           tar -xzf "$RUNNER_TEMP/bundle.tar.gz" -C "$RUNNER_TEMP"
           cd "$RUNNER_TEMP/vinoopeneffects-$TAG"
           test ! -e .git
-          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" cargo build --locked -p vinoopeneffects-ctl
-          out="$("$GITHUB_WORKSPACE/target/debug/vinoopeneffects-ctl" --version)"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
+          cargo build --locked -p vinoopeneffects-ctl
+          out="$("$CARGO_TARGET_DIR/debug/vinoopeneffects-ctl" --version)"
           echo "$out"
-          grep -qw "$TAG" <<<"$out"
+          test "$out" = "vinoopeneffects-ctl dev"
+          VINOOPENEFFECTS_VERSION="$TAG" cargo build --locked -p vinoopeneffects-ctl
+          out="$("$CARGO_TARGET_DIR/debug/vinoopeneffects-ctl" --version)"
+          echo "$out"
+          test "$out" = "vinoopeneffects-ctl $TAG"
 
   deny:
     runs-on: ubuntu-26.04

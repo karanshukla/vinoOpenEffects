@@ -7,3 +7,4 @@ pub mod error;
 pub mod migrate;
 pub mod npu_failure;
 pub mod systemd;
+pub mod version;

@@ -119,7 +119,7 @@ change is meant to alter the output, update the digest and say so in the PR.
 | `build-npu` | `cargo check` of the daemon with and without default features |
 | `msrv` | `cargo +1.92 test --workspace --no-run`: builds the tests and dev-dependencies too, not only the binaries |
 | `install` | `shellcheck scripts/*.sh`; `install.sh` must refuse an unwritable prefix before building; then `install.sh --no-models` into a scratch prefix, a check of every installed file, a second install over it (the upgrade path), and `install.sh --uninstall` from a `file://` fake release, which must leave nothing behind in the prefix and delete the models and compile cache from a scratch `HOME` while keeping its backgrounds and settings (then `--purge` must remove those) |
-| `release-bundle` | Builds the same `git archive` bundle as `release.yml` with a made-up tag, builds the CLI from it with `--locked`, and checks `--version` reports the tag from the bundle's `VERSION` file |
+| `release-bundle` | Builds the same `git archive` bundle as `release.yml` with a made-up tag, builds the CLI from it with `--locked`, and checks `--version` reports `dev`, then the tag when `VINOOPENEFFECTS_VERSION` is set |
 | `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, sources) |
 | `fedora` | `cargo build` and `cargo test --locked` in a `fedora:latest` container with Fedora's own rustc. Not required, since a new Fedora release can break it on its own |
 
@@ -157,12 +157,12 @@ tag is on `main` and has a changelog section, then publishes a GitHub Release
 with that section as its notes, a source bundle
 (`vinoopeneffects-vN-source.tar.gz`), the prebuilt binaries
 (`vinoopeneffects-x86_64-linux.tar.gz`, built on CI's Ubuntu 26.04 image),
-`install.sh` and `SHA256SUMS` ([install.md](install.md#from-a-release)). The bundle has no `.git`, so it carries a `VERSION`
-file that `buildinfo/version.rs` reads. The crate version in `Cargo.toml` is not
+`install.sh` and `SHA256SUMS` ([install.md](install.md#from-a-release)). The crate version in `Cargo.toml` is not
 the release number and doesn't change with it. The version the GUI's About
 dialog and `vinoopeneffects-ctl --version` show comes from
-`VINOOPENEFFECTS_VERSION` if set, else `VERSION`, else the checkout's exact `vN`
-tag, else `dev`.
+`shared/src/version.rs`: the `vN` tag when the build had `VINOOPENEFFECTS_VERSION`
+set (only the release workflow's `binaries` job does), else `dev`. A build from a
+checkout or the source bundle is `dev`, even at a tag.
 
 ### Changelog
 

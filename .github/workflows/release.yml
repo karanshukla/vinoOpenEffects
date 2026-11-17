@@ -35,14 +35,13 @@ jobs:
           [ -s notes.md ] || { echo "::error::CHANGELOG.md has no '## [$TAG]' section"; exit 1; }
 
       # Not GitHub's own tag tarballs: they aren't in SHA256SUMS and their bytes
-      # have changed before. VERSION is what a bundle's build reports instead of `dev`.
+      # have changed before. A build from it is a source build and reports `dev`.
       - name: Build the source bundle and checksums
         env:
           TAG: ${{ github.ref_name }}
         run: |
           mkdir dist
           git archive --format=tar.gz --prefix="vinoopeneffects-$TAG/" \
-            --add-virtual-file="vinoopeneffects-$TAG/VERSION:$TAG" \
             -o "dist/vinoopeneffects-$TAG-source.tar.gz" HEAD
           (cd dist && sha256sum -- * > SHA256SUMS)
           cp notes.md dist/
@@ -78,12 +77,11 @@ jobs:
         run: |
           mkdir -p out
           git archive --prefix=vinoopeneffects/ HEAD | tar -x -C out
-          printf '%s\n' "$TAG" > out/vinoopeneffects/VERSION
           install -d out/vinoopeneffects/bin
           for bin in vinoopeneffects-daemon vinoopeneffects-ctl vinoopeneffects; do
             install -m 0755 "target/release/$bin" out/vinoopeneffects/bin/
           done
-          out/vinoopeneffects/bin/vinoopeneffects-ctl --version | tee /dev/stderr | grep -qF "$TAG"
+          out/vinoopeneffects/bin/vinoopeneffects-ctl --version | tee /dev/stderr | grep -qx "vinoopeneffects-ctl $TAG"
           tar -czf vinoopeneffects-x86_64-linux.tar.gz -C out vinoopeneffects
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

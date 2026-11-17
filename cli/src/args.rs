@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand, ValueEnum};
         Effects have friendly subcommands (center-stage, portrait-blur, background,\n\
         studio-light, reactions). Run one with no flags to print its current state,\n\
         or pass flags to change settings. `set` is a low-level escape hatch.",
-    version = env!("VINOOPENEFFECTS_VERSION")
+    version = shared::version::VERSION
 )]
 pub(crate) struct Cli {
     #[command(subcommand)]
