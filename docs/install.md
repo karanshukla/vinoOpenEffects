@@ -1,85 +1,93 @@
 # Install
 
-vinoOpenEffects installs with one command from a release (prebuilt x86_64
-binaries, no Rust toolchain) or from a checkout. There are no `.deb`, `.rpm`
-or Arch packages: shipping the right onnxruntime (CPU or OpenVINO) per machine
-is easier from an install script, and packaging will come back later.
+vinoOpenEffects can be installed either from a prebuilt `x86_64` release (no
+Rust toolchain required) or from a source checkout. Native `.deb`, `.rpm`, and
+Arch packages are not yet provided because selecting the matching ONNX Runtime
+build (OpenVINO/CPU) per machine is currently handled by the installer script.
 
 ## Requirements
 
-- Wayland, PipeWire and WirePlumber
-- From a checkout only: Rust 1.92 or newer, and the GStreamer, GTK 4,
-  libadwaita and PipeWire development packages
-  ([development.md](development.md#environments) lists them for Fedora and
-  Debian/Ubuntu)
-- For the GUI: libadwaita 1.7 or newer, and `gtk4paintablesink` for the live
-  preview (`gstreamer1-plugin-gtk4` on Fedora, `gstreamer1.0-gtk4` on
-  Debian/Ubuntu, `gst-plugin-gtk4` on Arch). Use `--no-gui` without them.
-- [ovfetch](https://github.com/karanshukla/ovfetch) 0.5.0 or newer
-  (`cargo install ovfetch --locked`), on every machine: it is the only source of
-  onnxruntime. The release installer fetches its own if it isn't on `PATH`
-- Python 3.11 or newer and `curl`, for fetching the models (or `--no-models`)
-- x86_64 has been tested; nothing else has
+- **Display and media:** Wayland, PipeWire, and WirePlumber.
+- **Source builds only:** Rust 1.92 or newer, plus GStreamer, GTK 4, libadwaita,
+  and PipeWire development packages (see
+  [development.md](development.md#environments) for distro package lists).
+- **GUI:** libadwaita 1.7 or newer and `gtk4paintablesink` for live preview
+  (`gstreamer1-plugin-gtk4` on Fedora, `gstreamer1.0-gtk4` on Debian/Ubuntu,
+  `gst-plugin-gtk4` on Arch). Pass `--no-gui` if you do not have these.
+- **ONNX Runtime installer:**
+  [ovfetch](https://github.com/karanshukla/ovfetch) 0.5.0 or newer
+  (`cargo install ovfetch --locked`), which is the only source of ONNX Runtime.
+  The release installer downloads a pinned copy automatically if `ovfetch` is
+  not on `PATH`.
+- **Model downloads:** Python 3.11 or newer and `curl` (unless you pass
+  `--no-models`).
+- **Architecture:** Only `x86_64` has been tested.
 
 ## Distros
 
-Developed on Fedora 45 KDE. Others are expected to work from the package
-lists in [development.md](development.md#environments); "not tried" means
-nobody has reported back yet, not that something is known to break.
+Development targets Fedora 45 KDE. Other distros should work with the package
+lists in [development.md](development.md#environments); "Not tried" means no one
+has reported results yet rather than a known failure.
 
 | Distro | Status | Notes |
 |---|---|---|
-| Fedora 42+ (Workstation, KDE) | Primary target | |
-| Fedora Atomic (Silverblue, Kinoite, Bazzite) | Not tried | Release install into `~/.local`; the GUI may need layered packages, see below |
+| Fedora 42+ (Workstation, KDE) | Primary target | — |
+| Fedora Atomic (Silverblue, Kinoite, Bazzite) | Not tried | Install from a release into `~/.local`; the GUI may need layered packages (see below) |
 | Ubuntu 26.04, Debian 13 | CI builds and tests on Ubuntu 26.04 | NPU users need the `render` group ([hardware.md](hardware.md)) |
-| Ubuntu 24.04, Debian 12 | Daemon and CLI only | libadwaita 1.5/1.2 is too old for the GUI: `--no-gui`. Their packaged Rust is older than 1.92, so use rustup |
-| Arch | Not tried | `gst-plugin-pipewire` isn't pulled in by `pipewire` |
-| openSUSE Tumbleweed | Not tried | The GUI preview's sink is in `gstreamer-plugins-rs` |
-| openSUSE Leap 15 | Unsupported | GTK, libadwaita and Python are too old |
-| openSUSE Aeon / MicroOS | Not tried | As for Fedora Atomic, with a Tumbleweed distrobox for builds |
+| Ubuntu 24.04, Debian 12 | Daemon and CLI only | libadwaita 1.5/1.2 is too old for the GUI (use `--no-gui`); packaged Rust is older than 1.92, so install Rust via `rustup` |
+| Arch | Not tried | `gst-plugin-pipewire` is not pulled in automatically by `pipewire` |
+| openSUSE Tumbleweed | Not tried | The GUI preview sink is packaged in `gstreamer-plugins-rs` |
+| openSUSE Leap 15 | Unsupported | GTK, libadwaita, and Python are too old |
+| openSUSE Aeon / MicroOS | Not tried | Same approach as Fedora Atomic, using a Tumbleweed distrobox for builds |
 
-`vinoopeneffects-ctl doctor` names the missing package for your distro.
+Run `vinoopeneffects-ctl doctor` after installing to see the exact package names
+for any missing runtime dependency on your distro.
 
 ### Fedora Atomic and other image-based distros
 
-`/usr` is read-only, so the default `~/.local` install is the one to use
-(`/usr/local` also works: on Fedora Atomic it is `/var/usrlocal`). Nothing here
-needs root or a kernel module. The [release install](#from-a-release) needs
-no build tools, so run it on the host:
+Because `/usr` is read-only, use the default `~/.local` install (`/usr/local`
+also works—on Fedora Atomic it maps to `/var/usrlocal`). Nothing requires root
+or a kernel module, and the [release install](#from-a-release) needs no build
+tools, so run it directly on the host:
 
 ```bash
 curl -fsSL https://github.com/karanshukla/vinoOpenEffects/releases/latest/download/install.sh | bash
 ```
 
-The daemon and CLI need GStreamer with `-plugins-good` and
-`pipewire-gstreamer`. The GUI also needs `gtk4`, `libadwaita` and
-`gstreamer1-plugin-gtk4`; Silverblue ships most of these, Kinoite and Bazzite
-may not ship the GTK ones. Run `vinoopeneffects-ctl doctor`: it names what to
-`rpm-ostree install` (then reboot), or install with `bash -s -- --no-gui` and
-skip the GUI. If `vinoopeneffects-ctl status` says the daemon isn't
-activatable, run `systemctl --user daemon-reload` or log in again.
+Runtime package notes:
 
-The release binaries need libraries at least as new as Ubuntu 26.04's. If the
-host's are older, or you're installing from a checkout, build in a toolbox (or
-distrobox): the build needs the `-devel` packages and Rust, which belong there
-rather than layered on the host:
+- The daemon and CLI require GStreamer with `-plugins-good` and
+  `pipewire-gstreamer`.
+- The GUI also requires `gtk4`, `libadwaita`, and `gstreamer1-plugin-gtk4`.
+  Silverblue ships most of these, while Kinoite and Bazzite may omit the GTK
+  packages.
+- Run `vinoopeneffects-ctl doctor` to see what to pass to `rpm-ostree install`
+  (followed by a reboot), or skip the GUI with `bash -s -- --no-gui`.
+- If `vinoopeneffects-ctl status` reports that the daemon is not activatable,
+  run `systemctl --user daemon-reload` or log out and back in.
+
+Because the prebuilt binaries require libraries at least as new as Ubuntu
+26.04's, build inside a toolbox or distrobox if your host libraries are older or
+when installing from a source checkout (keeping Rust and `-devel` packages out
+of the host image):
 
 ```bash
 toolbox create --release "$(rpm -E %fedora)" vinoopeneffects
 toolbox enter vinoopeneffects
-sudo dnf install rust cargo  # plus the Fedora list in development.md
+sudo dnf install rust cargo  # plus the Fedora packages in development.md
 cargo install ovfetch --locked
 scripts/install.sh
 ```
 
-The toolbox shares your home directory and session bus, so the install lands in
-`~/.local` and the daemon runs on the host. Create the toolbox with the host's
-release so the binaries link against the same library versions the host has.
-The host still needs the runtime packages above; run `doctor` on the host, not
-in the toolbox.
+The toolbox shares your home directory and session bus, so the installation
+lands in `~/.local` and the daemon runs on the host. Match the toolbox release
+to your host OS so linked library versions align. The host still needs the
+runtime packages listed above; run `vinoopeneffects-ctl doctor` on the host
+rather than inside the toolbox.
 
-On openSUSE Aeon and MicroOS the same applies with a Tumbleweed distrobox for
-builds and `transactional-update pkg install` for anything the host lacks.
+On openSUSE Aeon and MicroOS, follow the same workflow with a Tumbleweed
+distrobox for builds and `transactional-update pkg install` for any missing host
+runtime packages.
 
 ## Installing
 
@@ -89,99 +97,105 @@ builds and `transactional-update pkg install` for anything the host lacks.
 curl -fsSL https://github.com/karanshukla/vinoOpenEffects/releases/latest/download/install.sh | bash
 ```
 
-That downloads the release's `SHA256SUMS` and `vinoopeneffects-x86_64-linux.tar.gz`, refuses
-the tarball unless it's listed there and matches, and runs the release's own
-`scripts/install.sh` from a temporary directory. With `bin/` beside `scripts/` it installs
-those binaries instead of building, so there's no Rust toolchain to install. Options go after
-`bash -s --` (`--no-gui`, `--no-models`, `vN` for a specific release; with `sudo`,
-`--prefix /usr/local`). The binaries are built on Ubuntu 26.04, the same image as CI, so they
-need its glibc and GTK/libadwaita/GStreamer/PipeWire or newer; on an older distro (SteamOS,
-Endless OS 6), build from source or in a toolbox. They also need the standard dynamic linker,
-so on NixOS enable `programs.nix-ld`. Releases before v4 have no binaries.
+How the release installer works:
 
-ovfetch is still what installs onnxruntime. Without ovfetch 0.5.0 or newer on `PATH`, the
-script downloads ovfetch's own release binary into `lib/vinoopeneffects/bin/`, checked against
-a sha256 pinned in the script.
-
-Every release install also leaves `install.sh` as `vinoopeneffects-upgrade`. **Check for
-Updates** in the window's menu asks GitHub for the newest release (only when you click it) and
-offers to run it; `vinoopeneffects-upgrade` (or `vinoopeneffects-upgrade v5`) does the same from
-a terminal. It restarts the daemon if it was running, so the camera pauses for a moment.
-`vinoopeneffects-upgrade --uninstall` removes a release install again (see
-[Uninstalling](#uninstalling)).
+- **Verification:** Downloads `SHA256SUMS` and `vinoopeneffects-x86_64-linux.tar.gz`,
+  verifies the tarball checksum, and runs the bundled `scripts/install.sh` from
+  a temporary directory. Because prebuilt binaries sit in `bin/` beside
+  `scripts/`, no Rust toolchain is needed.
+- **Options:** Pass flags after `bash -s --`, such as `--no-gui`, `--no-models`,
+  a specific tag like `v5`, or `--prefix /usr/local` (with `sudo`).
+- **Library compatibility:** Prebuilt binaries are compiled on Ubuntu 26.04 (the
+  CI image) and require glibc, GTK, libadwaita, GStreamer, and PipeWire at least
+  that new. On older distributions (such as SteamOS or Endless OS 6), build from
+  source or inside a toolbox. On NixOS, enable `programs.nix-ld` for the
+  standard dynamic linker. Releases prior to `v4` do not include prebuilt
+  binaries.
+- **ovfetch bootstrap:** If `ovfetch` 0.5.0 or newer is not on `PATH`, the
+  installer fetches a SHA-256-pinned `ovfetch` release binary into
+  `lib/vinoopeneffects/bin/` to install ONNX Runtime.
+- **Upgrading and uninstalling:** Every release install saves the installer as
+  `vinoopeneffects-upgrade`. Clicking **Check for Updates** in the window menu
+  checks GitHub on demand and offers to run it, or you can run
+  `vinoopeneffects-upgrade` (or `vinoopeneffects-upgrade v5`) in a terminal.
+  Upgrading restarts a running daemon, briefly pausing the camera. Run
+  `vinoopeneffects-upgrade --uninstall` to remove the installation (see
+  [Uninstalling](#uninstalling)).
 
 ### From a checkout
 
 ```bash
-scripts/install.sh                          # into ~/.local, no root
+scripts/install.sh                          # install into ~/.local without root
 scripts/install.sh --no-gui                 # daemon and CLI only
-scripts/install.sh --no-models              # don't touch models at all
+scripts/install.sh --no-models              # skip model downloads
 scripts/install.sh --build-runtime          # let ovfetch compile a newer OpenVINO build
 ```
 
-System-wide, build as yourself first, then install as root. As root the script
-never builds, since that would leave a root-owned `target/` in the checkout:
+For a system-wide install, compile as your regular user first and then run the
+installer with `sudo` (when run as root, `install.sh` refuses to compile so it
+never leaves a root-owned `target/` directory in your checkout):
 
 ```bash
 cargo build --release --locked -p vinoopeneffects-daemon -p vinoopeneffects-ctl -p vinoopeneffects
 sudo scripts/install.sh --prefix /usr/local
 ```
 
-Under sudo it finds ovfetch in your `~/.cargo/bin` even though sudo's
-`secure_path` drops it (elsewhere: `sudo env PATH="$PATH" scripts/install.sh ...`),
-warns if a source file is newer than the build, puts the models under the
-prefix instead of root's home, and reloads your user session's D-Bus and
-systemd rather than root's. A `CARGO_TARGET_DIR` has to be passed through:
+When invoked under `sudo`, `install.sh` locates `ovfetch` in your `~/.cargo/bin`
+even if `sudo`'s `secure_path` strips it (if `ovfetch` lives elsewhere, run
+`sudo env PATH="$PATH" scripts/install.sh ...`), warns if source files are newer
+than the build, installs models under the prefix instead of root's home, and
+reloads your user session's D-Bus and systemd instances rather than root's. Pass
+`CARGO_TARGET_DIR` explicitly if you use one:
 `sudo CARGO_TARGET_DIR=... scripts/install.sh ...`.
 
-It builds a release and installs:
+Files installed under the prefix:
 
-| What | Where (under the prefix) |
+| Component | Path under prefix |
 |---|---|
 | `vinoopeneffects-daemon`, `vinoopeneffects-ctl`, `vinoopeneffects` | `bin/` |
 | D-Bus interfaces and activation file | `share/dbus-1/interfaces/`, `share/dbus-1/services/` |
 | systemd user unit | `share/systemd/user/vinoopeneffects-daemon.service` |
 | Desktop entry and icons (GUI) | `share/applications/`, `share/icons/hicolor/` |
-| onnxruntime | `lib/vinoopeneffects/ort/`, installed by `ovfetch` (see below) |
-| Models | `~/.local/share/vinoopeneffects/models/`, or `share/vinoopeneffects/models/` under the prefix when run as root; sha256-verified against the manifests, ones already present and verified are skipped. Uninstalling deletes them |
+| ONNX Runtime | `lib/vinoopeneffects/ort/` (managed by `ovfetch`) |
+| Models | `~/.local/share/vinoopeneffects/models/` (or `share/vinoopeneffects/models/` under the prefix when run as root); SHA-256-verified against manifests, skipping already verified files, and removed on uninstall |
 
-**ovfetch decides the runtime.** `install.sh` stops before building if ovfetch
-is missing or older than 0.5.0, then runs `ovfetch install` before installing
-anything else. ovfetch picks the OpenVINO build of onnxruntime that fits the
-machine's NPU and driver, or the newest one on a machine without an NPU; that
-build also carries the CPU provider, so the same runtime serves CPU inference.
+**ONNX Runtime selection (`ovfetch`):** `install.sh` verifies that `ovfetch`
+0.5.0 or newer is available before building, then runs `ovfetch install`.
+`ovfetch` selects the OpenVINO build of ONNX Runtime matching your NPU and
+driver, or the newest build on machines without an NPU (it also bundles the CPU
+provider, so one runtime covers both NPU and CPU).
 
-If ovfetch doesn't install (for example, the prefix holds a newer build it won't
-downgrade, such as one compiled with `ovfetch install --build`, or the download
-fails) but the prefix passes `ovfetch verify`, the install continues with that
-runtime and a warning. With nothing verified to keep, it stops with ovfetch's
-reason. `--build-runtime` passes `--build`, so ovfetch resolves the compiled
-build itself (an unchanged one is not recompiled).
+If `ovfetch install` fails or refuses to downgrade a newer local build (for
+example, one built with `ovfetch install --build`), `install.sh` falls back to
+the existing runtime with a warning as long as `ovfetch verify` succeeds;
+otherwise it aborts with `ovfetch`'s error. Passing `--build-runtime` forwards
+`--build` to `ovfetch` (unchanged builds are not recompiled).
 
-Then it asks the session bus to reload, so the daemon is D-Bus-activatable
-straight away, and warns if `bin/` isn't on `PATH`. It does not restart a daemon
-that is already running: `systemctl --user restart vinoopeneffects-daemon`.
+At the end of the install, the script reloads the D-Bus session bus so the
+daemon is immediately activatable, and warns if `bin/` is not on `PATH`. It does
+not restart an already-running daemon—run
+`systemctl --user restart vinoopeneffects-daemon` to pick up the new binary.
 
-The daemon starts on demand, the first time a client talks to it. To start it
-with the desktop session instead, see `vinoopeneffects-ctl autostart` in
+By default the daemon starts on demand on the first client request. To start it
+at login instead, see `vinoopeneffects-ctl autostart` in
 [cli.md](cli.md#autostart).
 
 ## Desktops
 
-Wayland only. Nothing in the daemon or the GUI is tied to one desktop: the
-virtual camera is a PipeWire node and the GUI is plain GTK 4/libadwaita. What
-differs is how the daemon gets started and how sandboxed apps reach the camera.
+vinoOpenEffects requires Wayland. Nothing in the daemon or GUI is tied to a
+specific desktop environment: the virtual camera is a standard PipeWire node and
+the GUI uses GTK 4/libadwaita. The only desktop differences are login autostart
+and portal permissions for sandboxed apps.
 
 | Desktop | `autostart enable` | Notes |
 |---|---|---|
-| KDE Plasma | Works | The primary target |
-| GNOME | Works | |
-| sway, Hyprland | Only under systemd integration (sway-systemd, uwsm) | Otherwise start it from the compositor config, below |
-| COSMIC, others | Run `vinoopeneffects-ctl autostart status` | It says whether `graphical-session.target` is active |
+| KDE Plasma | Works | Primary target |
+| GNOME | Works | — |
+| sway, Hyprland | Only under systemd integration (`sway-systemd`, `uwsm`) | Otherwise start the daemon from compositor config (below) |
+| COSMIC, others | Check with `vinoopeneffects-ctl autostart status` | Reports whether `graphical-session.target` is active |
 
-Autostart hangs off `graphical-session.target`. A compositor that doesn't start
-it never starts the daemon at login, so add it to the compositor's config
-instead:
+Because autostart attaches to `graphical-session.target`, compositors that do
+not start that target should launch the daemon from their config file:
 
 ```
 # sway (~/.config/sway/config)
@@ -191,69 +205,69 @@ exec systemctl --user start vinoopeneffects-daemon
 exec-once = systemctl --user start vinoopeneffects-daemon
 ```
 
-Without either, the daemon still starts on demand the first time the GUI or the
-CLI talks to it; autostart only matters for apps that should see the virtual
-camera before that.
+Even without autostart, the daemon starts on demand whenever the GUI or CLI
+connects; autostart is only needed if you want video apps to see the virtual
+camera before launching vinoOpenEffects.
 
-Flatpak apps, and browsers using PipeWire cameras, reach the virtual camera
-through xdg-desktop-portal's Camera portal, which asks the desktop's portal
-backend for permission. The GNOME and KDE backends do that.
-`xdg-desktop-portal-wlr` and `-hyprland` don't, so on sway or Hyprland also
-install `xdg-desktop-portal-gtk`.
+Flatpak apps and browsers using PipeWire cameras access the virtual camera via
+xdg-desktop-portal's Camera portal, which delegates permission prompts to the
+desktop's portal backend. The GNOME and KDE backends implement this;
+`xdg-desktop-portal-wlr` and `xdg-desktop-portal-hyprland` do not, so on sway or
+Hyprland also install `xdg-desktop-portal-gtk`.
 
 ## Files at runtime
 
-- `~/.config/vinoopeneffects/state.toml`: effect settings, the selected camera
-  and the inference provider, written by the daemon. One it can't parse is
-  moved aside to `state.toml.bad-<time>`, not overwritten
-- `~/.config/vinoopeneffects/gui.toml`: GUI-only preferences
-- `~/.local/share/vinoopeneffects/backgrounds/`: the preset background images,
-  extracted from the GUI binary on first launch
-- `~/.local/share/vinoopeneffects/models/`: the models (the daemon also looks in
-  `share/vinoopeneffects/models` under its own prefix, `/usr/local/share` and
-  `/usr/share`)
-- `~/.cache/vinoopeneffects/openvino/`: the NPU compile cache, so later starts
-  skip compiling the models
+- `~/.config/vinoopeneffects/state.toml` — effect settings, selected camera, and
+  inference provider, maintained by the daemon. If parsing fails, the file is
+  moved to `state.toml.bad-<time>` instead of being overwritten.
+- `~/.config/vinoopeneffects/gui.toml` — GUI-only preferences.
+- `~/.local/share/vinoopeneffects/backgrounds/` — preset background images
+  extracted from the GUI binary on first launch.
+- `~/.local/share/vinoopeneffects/models/` — downloaded models (the daemon also
+  searches `share/vinoopeneffects/models` under its own prefix,
+  `/usr/local/share`, and `/usr/share`).
+- `~/.cache/vinoopeneffects/openvino/` — NPU compiled-model cache so subsequent
+  starts skip model compilation.
 
-**Downloaded Models** in Preferences shows how much the models and the compile
-cache take and deletes both. It stops the daemon first (D-Bus starts it again
-when the window reconnects, so the camera pauses for a moment) and leaves the
-backgrounds and settings alone. It never touches a system-wide install under
-`/usr/local` or `/usr`; when there is one, the effects keep using it. To get the
-models back, run `vinoopeneffects-upgrade` (a release install) or
-`scripts/fetch-models.sh` (a checkout).
+In the GUI, **Downloaded Models** under Preferences shows the combined size of
+your user models and compile cache and can delete both. It stops the daemon
+first (D-Bus restarts it when the window reconnects, briefly pausing the camera)
+and preserves backgrounds and settings. It never modifies system-wide models
+under `/usr/local` or `/usr`—if those exist, effects continue using them. To
+re-download models later, run `vinoopeneffects-upgrade` (release install) or
+`scripts/fetch-models.sh` (source checkout).
 
 ## Uninstalling
 
-A release install:
+For a release install:
 
 ```bash
-vinoopeneffects-upgrade --uninstall                 # from ~/.local
+vinoopeneffects-upgrade --uninstall                 # remove from ~/.local
 sudo vinoopeneffects-upgrade --uninstall --prefix /usr/local
-vinoopeneffects-upgrade --uninstall --purge         # also config and backgrounds
+vinoopeneffects-upgrade --uninstall --purge         # also remove config and backgrounds
 ```
 
-That downloads the release's tarball, checks it like an install does, and runs
-its `scripts/uninstall.sh`, which is the only uninstaller: a release install
-keeps nothing but `vinoopeneffects-upgrade` on disk. From a checkout, run the
-script directly:
+Because a release install leaves only `vinoopeneffects-upgrade` on disk for
+lifecycle management, `--uninstall` downloads and verifies the release tarball
+and runs its `scripts/uninstall.sh`. From a checkout, run the script directly:
 
 ```bash
-scripts/uninstall.sh                        # from ~/.local
+scripts/uninstall.sh                        # remove from ~/.local
 sudo scripts/uninstall.sh --prefix /usr/local
-scripts/uninstall.sh --purge                # also config and backgrounds
+scripts/uninstall.sh --purge                # also remove config and backgrounds
 ```
 
-It disables and stops the user unit first, then removes everything
-`install.sh` put under the prefix, including the onnxruntime (and, as root, the
-models under the prefix). It also deletes your models
+Uninstalling disables and stops the user service, removes everything
+`install.sh` placed under the prefix (including ONNX Runtime and, when run as
+root, prefix-installed models), and deletes user models
 (`~/.local/share/vinoopeneffects/models`) and the compile cache
-(`~/.cache/vinoopeneffects`); under `sudo`, the sudo user's. Settings
-(`~/.config/vinoopeneffects`) and backgrounds stay unless you pass `--purge`.
+(`~/.cache/vinoopeneffects`, targeting the invoking user under `sudo`).
+Configuration (`~/.config/vinoopeneffects`) and backgrounds are kept unless
+`--purge` is passed.
 
 ## Upgrading from openeffects
 
-vinoOpenEffects is a hard fork of `openeffects`, and every installed name
+vinoOpenEffects is a hard fork of `openeffects`, and all installed names
 changed:
 
 | Old | New |
@@ -262,25 +276,25 @@ changed:
 | `openeffectsd.service` | `vinoopeneffects-daemon.service` |
 | `in.co.funinkina.Daemon.service` (D-Bus) | `io.github.karanshukla.vinoopeneffects.Daemon.service` |
 | `OE_EP`, `OE_MODELS_DEST` | `VINOOPENEFFECTS_EP`, `VINOOPENEFFECTS_MODELS_DEST` |
-| camera "OpenEffects Virtual Camera" | "vinoOpenEffects Virtual Camera" |
+| Camera `"OpenEffects Virtual Camera"` | `"vinoOpenEffects Virtual Camera"` |
 
-On first start the daemon and the GUI move your per-user state to the new names,
-logging each move:
+On first launch, the daemon and GUI automatically migrate per-user state and log
+each move:
 
-- `~/.config/openeffects/` to `~/.config/vinoopeneffects/`
-- `~/.local/share/openeffects/` (models, backgrounds) to
-  `~/.local/share/vinoopeneffects/`, rewriting the background paths stored in
-  `state.toml`
-- `~/.config/systemd/user/openeffectsd.service.d/` to
-  `~/.config/systemd/user/vinoopeneffects-daemon.service.d/`, with `OE_EP` and
-  `OE_MODELS_DEST` in its `*.conf` files renamed
-- enablement links `*.wants/openeffectsd.service`, re-created for the new unit
+- `~/.config/openeffects/` → `~/.config/vinoopeneffects/`
+- `~/.local/share/openeffects/` (models and backgrounds) →
+  `~/.local/share/vinoopeneffects/`, updating background paths in `state.toml`
+- `~/.config/systemd/user/openeffectsd.service.d/` →
+  `~/.config/systemd/user/vinoopeneffects-daemon.service.d/`, renaming `OE_EP`
+  and `OE_MODELS_DEST` inside `*.conf` files
+- Enablement symlinks (`*.wants/openeffectsd.service`) recreated for the new
+  unit
 
-An item whose destination already exists is skipped with a warning; old and new
-are never merged. A user-installed `~/.config/systemd/user/openeffectsd.service`
-is left alone with a warning. Run `systemctl --user daemon-reload` afterwards.
+If a destination already exists, that item is skipped with a warning rather than
+merged. A user-installed `~/.config/systemd/user/openeffectsd.service` is left
+untouched with a warning. Run `systemctl --user daemon-reload` afterward.
 
-The old binaries, unit and D-Bus files are not removed: uninstall `openeffects`
-the way you installed it. Then update scripts, keybinds and Waybar modules that
-call `openeffectsctl`, and re-select the camera in each app, since its name
-changed.
+The old binaries, service unit, and D-Bus files are not removed automatically;
+uninstall `openeffects` using whichever method you originally used, update any
+scripts, keybinds, or Waybar modules calling `openeffectsctl`, and re-select
+**vinoOpenEffects Virtual Camera** in your video apps.

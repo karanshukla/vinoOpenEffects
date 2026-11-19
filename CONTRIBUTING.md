@@ -1,54 +1,60 @@
 # Contributing
 
-This is developed on one Fedora laptop with an Intel NPU and one integrated
-webcam. The most useful thing you can bring is what it does on *your* machine,
-since that is what I can't test from here.
+vinoOpenEffects is developed on a single Fedora laptop with an Intel NPU and one
+integrated webcam, so test reports from other hardware and distros are
+especially valuable.
 
-## Most useful
+## Priority testing areas
 
-1. **Other cameras.** UVC webcams, external cameras, anything that misbehaves
-   in the virtual camera (wrong mode, frame rate, colours). Attach
-   `vinoopeneffects-ctl doctor --json` and `v4l2-ctl --list-formats-ext -d /dev/videoN`.
-2. **Other consumers.** Zoom, Teams, OBS, Firefox, Chromium and Flatpak builds
-   of them all negotiate the virtual camera slightly differently. Say which app
-   and version, and include `journalctl --user -u vinoopeneffects-daemon`.
-3. **Other hardware and distros.** Other NPU generations, the OpenVINO GPU
-   path, CPU-only machines, and `scripts/install.sh` on distros other than
-   Fedora.
+1. **Other cameras:** UVC webcams, external cameras, or any mode, frame rate, or
+   color issue in the virtual camera. Attach `vinoopeneffects-ctl doctor --json`
+   and `v4l2-ctl --list-formats-ext -d /dev/videoN`.
+2. **Other video apps:** Zoom, Teams, OBS, Firefox, Chromium, and their Flatpak
+   builds all negotiate the virtual camera slightly differently. Include the app
+   name, version, and output from `journalctl --user -u vinoopeneffects-daemon`.
+3. **Other hardware and distros:** Different NPU generations, the OpenVINO GPU
+   path, CPU-only machines, and `scripts/install.sh` on non-Fedora distros.
 
 ## Setup
 
 ```bash
-# system packages: see docs/development.md#environments
+# Install system packages first: see docs/development.md#environments
 cargo build --workspace
 cargo test --workspace
 ```
 
-That runs without models, onnxruntime or a camera. To run a real install from
-your checkout, see
+Building and running tests works without models, ONNX Runtime, or a camera. To
+install and test a live build from your checkout, see
 [Running your own build](docs/development.md#running-your-own-build).
 
 ## Before you push
+
+Run the full local check command:
 
 ```bash
 cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
 ```
 
-- Tests must not need a camera, an NPU, an audio server or a running daemon.
-  If a change can only be checked on hardware, mark the test (skip with a
-  `skipping: ...` line, or `#[ignore = "why"]`) and say in the PR what you ran by
-  hand. Don't fake it.
-- A failing `golden_frames_are_unchanged` means the effect output changed. If
-  that was the point, update the digest and say so in the PR.
-- Comments are the last resort: extract, name, or pin a rule with a test
-  pair first, and link the test from the code it governs. See
-  [docs/comment-style.md](docs/comment-style.md); `shared/tests/doc_links.rs`
-  checks the links. Longer reasoning goes in `docs/`, linked from the code.
-- Measured claims (latency, frame rate, power) carry a date and the machine.
-- Commits are conventional (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`,
-  `ci:`, `chore:`); the changelog is generated from them.
-- When a change alters user-visible behaviour, update the page in `docs/` that
-  owns it. The README links rather than repeats.
+Guidelines:
 
-[docs/development.md](docs/development.md) has the rest: what CI runs, the
-golden frames, and how releases are cut.
+- **Hardware-free tests:** Tests must not require a camera, NPU, audio server,
+  or running daemon. If a change can only be verified on hardware, mark the test
+  (print `skipping: ...` at runtime or use `#[ignore = "why"]`) and describe
+  your manual verification in the PR instead of faking a test.
+- **Golden frames:** If `golden_frames_are_unchanged` fails, effect rendering
+  output changed. When that is intentional, update the digest and note it in the
+  PR.
+- **Comments and docs:** Prefer extracting, naming, or pinning a rule with a
+  test pair before adding a comment, and link the test from the code it governs.
+  See [docs/comment-style.md](docs/comment-style.md);
+  `shared/tests/doc_links.rs` checks those links in CI. Longer rationale belongs
+  in `docs/`, linked from the code.
+- **Measured claims:** Always include the date and machine for latency, frame
+  rate, or power measurements.
+- **Commits:** Use conventional commit prefixes (`feat:`, `fix:`, `docs:`,
+  `refactor:`, `test:`, `ci:`, `chore:`), which drive changelog generation.
+- **Documentation updates:** Update the relevant page in `docs/` whenever
+  user-visible behavior changes; keep `README.md` concise and link to `docs/`.
+
+See [docs/development.md](docs/development.md) for CI jobs, golden frames, and
+the release process.
