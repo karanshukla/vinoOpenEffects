@@ -55,46 +55,64 @@ vinoopeneffects-ctl inference --retry  # forget a recorded NPU compile failure a
 vinoopeneffects-ctl inference --json   # machine-readable output
 ```
 
-`active` is marked *degraded* when an NPU is present but the models aren't all on
-it; `detail` says why and what fixes it, and `status` prints the same warning.
-A failed NPU compile is recorded so `auto` keeps to CPU on later starts until
-`--retry` or an NPU driver or runtime upgrade.
+`active` is reported as *degraded* when an NPU is present but not all models run
+on it; `detail` explains the reason and how to fix it, and `status` shows the
+same warning. A failed NPU compilation is recorded so `auto` stays on CPU across
+restarts until you run `--retry` or upgrade the NPU driver or runtime.
 
-Provider changes are persisted to `~/.config/vinoopeneffects/state.toml` under `[inference] provider`. Switching while streaming loads the new models alongside the old ones, so frames keep flowing on the old provider until the new one is ready. If `VINOOPENEFFECTS_EP` is set in the daemon's environment, it overrides this setting.
+Provider selections are saved to `~/.config/vinoopeneffects/state.toml` under
+`[inference] provider`. Switching providers while streaming loads the new models
+alongside the old ones so frames continue flowing until the new sessions are
+ready. If `VINOOPENEFFECTS_EP` is set in the daemon's environment, it overrides
+the saved setting.
 
 ## Autostart
 
 Control whether the daemon starts automatically with your desktop session
-(`systemctl --user enable/disable vinoopeneffects-daemon.service`).
+(`systemctl --user enable/disable vinoopeneffects-daemon.service`):
 
-| Command                        | Description                                                       |
-| ------------------------------ | ---------------------------------------------------------------- |
-| `vinoopeneffects-ctl autostart enable`  | Start the daemon automatically when the graphical session begins. |
-| `vinoopeneffects-ctl autostart disable` | Stop starting it automatically.                                   |
-| `vinoopeneffects-ctl autostart status`  | Show whether autostart is enabled and whether the daemon is running. |
+| Command | Description |
+|---|---|
+| `vinoopeneffects-ctl autostart enable` | Start the daemon automatically when the graphical session begins. |
+| `vinoopeneffects-ctl autostart disable` | Stop starting it automatically. |
+| `vinoopeneffects-ctl autostart status` | Show whether autostart is enabled and whether the daemon is running. |
 
-The unit is `WantedBy=graphical-session.target`. GNOME and KDE Plasma start
-that target; sway and Hyprland only do when run under systemd integration
-(sway-systemd, uwsm), so elsewhere `enable` succeeds but never fires.
-`enable`, `status` and `doctor` (`daemon: session`) say so when the target isn't
-active; see [install.md](install.md#desktops) for what to do instead.
+The unit uses `WantedBy=graphical-session.target`. GNOME and KDE Plasma activate
+that target automatically; sway and Hyprland only do so under systemd
+integration (`sway-systemd`, `uwsm`), so elsewhere `enable` succeeds without
+running at login. `enable`, `status`, and `doctor` (`daemon: session`) warn when
+that target is inactive; see [install.md](install.md#desktops) for compositor
+config alternatives.
 
 ## Diagnostics (`doctor`)
 
-Inspect system environment, models, NPU hardware, camera classifications, and daemon health in one command:
+Inspect the system environment, models, NPU hardware, camera classifications,
+and daemon health in one command:
 
 ```bash
 vinoopeneffects-ctl doctor
 ```
 
-Output checks:
-- **Daemon**: Reachability over D-Bus, D-Bus activation service file validity, systemd user unit status (diagnoses why activation failed if daemon is stopped).
-- **Inference**: NPU build feature, ONNX Runtime dynamic library and OpenVINO Execution Provider resolution, `/dev/accel` hardware nodes.
-- **Models**: Mandatory and optional model file discovery and SHA256 integrity verification against `manifest.toml`.
-- **Camera**: V4L2 device enumeration with format class tags (`RGB`, `IR`, `meta`), selected camera validation (warning and suggesting RGB alternative if an IR sensor is chosen).
-- **Pipeline**: PipeWire session socket connectivity and virtual camera node presence.
-- **GUI**: `gtk4paintablesink` and `pipewiresrc` GStreamer element availability (with the package and install command for Fedora, Fedora Atomic, Debian/Ubuntu, Arch, openSUSE and openSUSE Aeon/MicroOS if missing) and GTK 4 / libadwaita versions.
-- **Config**: `state.toml` existence, syntax validity, and unrecognized keys detection.
+Checks performed:
+
+- **Daemon:** Reachability over D-Bus, D-Bus activation service file validity,
+  and systemd user unit status (diagnoses why activation failed if the daemon is
+  stopped).
+- **Inference:** NPU build feature, ONNX Runtime dynamic library and OpenVINO
+  Execution Provider resolution, and `/dev/accel` hardware nodes.
+- **Models:** Mandatory and optional model file discovery and SHA-256 integrity
+  verification against `manifest.toml`.
+- **Camera:** V4L2 device enumeration with format class tags (`RGB`, `IR`,
+  `meta`) and selected camera validation (warning and suggesting an RGB
+  alternative if an IR sensor is selected).
+- **Pipeline:** PipeWire session socket connectivity and virtual camera node
+  presence.
+- **GUI:** `gtk4paintablesink` and `pipewiresrc` GStreamer element availability
+  (including the package name and install command for Fedora, Fedora Atomic,
+  Debian/Ubuntu, Arch, openSUSE, and openSUSE Aeon/MicroOS if missing), plus
+  GTK 4 and libadwaita versions.
+- **Config:** `state.toml` existence, syntax validity, and unrecognized key
+  detection.
 
 Machine-readable JSON output for bug reports or scripts:
 
@@ -102,17 +120,17 @@ Machine-readable JSON output for bug reports or scripts:
 vinoopeneffects-ctl doctor --json
 ```
 
-Exit status: exits non-zero (`1`) if any check returns `FAIL`, and `0` otherwise.
+Exits with status `1` if any check returns `FAIL`, and `0` otherwise.
 
 ## Effects overview
 
-| Command         | Effect id       | What it does                                   |
-| --------------- | --------------- | ---------------------------------------------- |
-| `center-stage`  | `center_stage`  | Auto crop + zoom that keeps you framed.        |
-| `portrait-blur` | `portrait_blur` | Blurs the background behind you.               |
-| `background`    | `bg_replace`    | Replaces the background with a color or image. |
-| `studio-light`  | `studio_light`  | Brightens and adds contrast to your face.      |
-| `reactions`     | `reactions`     | Gesture/emoji overlay.                         |
+| Command | Effect ID | What it does |
+|---|---|---|
+| `center-stage` | `center_stage` | Automatic crop and zoom that keeps you framed. |
+| `portrait-blur` | `portrait_blur` | Blurs the background behind you. |
+| `background` | `bg_replace` | Replaces the background with a solid color or image. |
+| `studio-light` | `studio_light` | Brightens and adds contrast to the foreground subject. |
+| `reactions` | `reactions` | Gesture-driven and manual emoji overlay. |
 
 List every effect with its on/off state:
 
@@ -125,7 +143,7 @@ vinoopeneffects-ctl effects
 
 ### Generic enable / disable / toggle
 
-Works for any effect (effect names are kebab-case):
+Works for any effect using its kebab-case name:
 
 ```bash
 vinoopeneffects-ctl enable portrait-blur
@@ -135,9 +153,9 @@ vinoopeneffects-ctl toggle reactions
 
 ### Master passthrough
 
-One switch over everything. When on, all effects are bypassed and the virtual
-camera passes the real camera through untouched. Per-effect settings are
-preserved, so turning it back off restores exactly what was on before.
+Bypass all effects at once so the virtual camera passes the raw webcam feed
+through untouched. Individual effect settings are preserved and restored when
+passthrough is turned back off.
 
 ```bash
 vinoopeneffects-ctl passthrough --on    # bypass all effects (raw camera)
@@ -145,15 +163,15 @@ vinoopeneffects-ctl passthrough --off   # re-enable effects
 vinoopeneffects-ctl passthrough         # print current state
 ```
 
-| Flag    | Notes                                          |
-| ------- | ---------------------------------------------- |
-| `--on`  | Bypass all effects — raw camera passthrough.   |
-| `--off` | Re-enable effects (turn passthrough off).      |
+| Flag | Notes |
+|---|---|
+| `--on` | Bypass all effects (raw camera passthrough). |
+| `--off` | Re-enable effects (turn passthrough off). |
 
 ## Per-effect commands
 
-Each effect subcommand shares the `--on` / `--off` toggle and adds its own
-settings. Pass any combination in one call; run with no flags to print the
+Each effect subcommand supports `--on` and `--off` along with its effect-specific
+options. Pass any combination in one call, or run with no flags to print the
 current state.
 
 ### Center Stage
@@ -164,15 +182,15 @@ vinoopeneffects-ctl center-stage --crop-left 40 --crop-right 40
 vinoopeneffects-ctl center-stage            # print current state
 ```
 
-| Flag             | Values                    | Notes                                        |
-| ---------------- | ------------------------- | -------------------------------------------- |
-| `--on` / `--off` | —                         | Enable / disable.                            |
-| `--zoom`         | `subtle` `normal` `tight` | Zoom level.                                  |
-| `--mode`         | `single` `group`          | Framing mode.                                |
-| `--crop-top`     | `0`–`512`                 | Manual crop inset (px) from the top edge.    |
-| `--crop-bottom`  | `0`–`512`                 | Manual crop inset (px) from the bottom edge. |
-| `--crop-left`    | `0`–`512`                 | Manual crop inset (px) from the left edge.   |
-| `--crop-right`   | `0`–`512`                 | Manual crop inset (px) from the right edge.  |
+| Flag | Values | Notes |
+|---|---|---|
+| `--on` / `--off` | — | Enable or disable. |
+| `--zoom` | `subtle`, `normal`, `tight` | Zoom level. |
+| `--mode` | `single`, `group` | Framing mode. |
+| `--crop-top` | `0`–`512` | Manual crop inset (px) from the top edge. |
+| `--crop-bottom` | `0`–`512` | Manual crop inset (px) from the bottom edge. |
+| `--crop-left` | `0`–`512` | Manual crop inset (px) from the left edge. |
+| `--crop-right` | `0`–`512` | Manual crop inset (px) from the right edge. |
 
 ### Portrait Blur
 
@@ -180,10 +198,10 @@ vinoopeneffects-ctl center-stage            # print current state
 vinoopeneffects-ctl portrait-blur --on --strength 75
 ```
 
-| Flag             | Values    | Notes             |
-| ---------------- | --------- | ----------------- |
-| `--on` / `--off` | —         | Enable / disable. |
-| `--strength`     | `0`–`100` | Blur strength.    |
+| Flag | Values | Notes |
+|---|---|---|
+| `--on` / `--off` | — | Enable or disable. |
+| `--strength` | `0`–`100` | Blur strength. |
 
 ### Background replace
 
@@ -195,10 +213,10 @@ vinoopeneffects-ctl background --off              # disable, keep stored backgro
 vinoopeneffects-ctl background                    # print current background
 ```
 
-| Argument / flag | Values                              | Notes                                                                                   |
-| --------------- | ----------------------------------- | --------------------------------------------------------------------------------------- |
-| `VALUE`         | `none`, `#RRGGBB`, or an image path | `none` clears and disables; any other value sets the background and enables the effect. |
-| `--off`         | —                                   | Disable without changing the stored background.                                         |
+| Argument / flag | Values | Notes |
+|---|---|---|
+| `VALUE` | `none`, `#RRGGBB`, or an image path | `none` clears and disables; any other value sets the background and enables the effect. |
+| `--off` | — | Disable without changing the stored background. |
 
 ### Studio Light
 
@@ -206,16 +224,16 @@ vinoopeneffects-ctl background                    # print current background
 vinoopeneffects-ctl studio-light --on --intensity 60 --brightness 10 --contrast 55
 ```
 
-| Flag             | Values       | Notes              |
-| ---------------- | ------------ | ------------------ |
-| `--on` / `--off` | —            | Enable / disable.  |
-| `--intensity`    | `0`–`100`    | Overall intensity. |
-| `--brightness`   | `-100`–`100` | Brightness lift on you, scaled by intensity. Default `30`. |
-| `--contrast`     | `0`–`100`    | Contrast around your average brightness. `50` is neutral.  |
+| Flag | Values | Notes |
+|---|---|---|
+| `--on` / `--off` | — | Enable or disable. |
+| `--intensity` | `0`–`100` | Overall intensity. |
+| `--brightness` | `-100`–`100` | Foreground brightness lift, scaled by intensity (default `30`). |
+| `--contrast` | `0`–`100` | Contrast pivoted around the subject's average brightness (`50` is neutral). |
 
 ### Reactions
 
-Toggle the overlay effect, or fire a one-shot emoji burst with `react`:
+Toggle the overlay effect, or trigger a one-shot emoji burst with `react`:
 
 ```bash
 vinoopeneffects-ctl reactions --on

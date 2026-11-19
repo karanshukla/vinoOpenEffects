@@ -1,21 +1,22 @@
 # Development
 
-How the repo is built, tested and released. [CONTRIBUTING.md](../CONTRIBUTING.md)
-is the short version.
+Build setup, testing, CI jobs, and release process. See
+[CONTRIBUTING.md](../CONTRIBUTING.md) for the short version.
 
 ## Environments
 
-Rust 1.92 or newer (`rust-version` in `Cargo.toml`, checked by the `msrv` CI
-job), plus the GStreamer, GTK 4, libadwaita and PipeWire development packages.
+Requires Rust 1.92 or newer (`rust-version` in `Cargo.toml`, verified by the
+`msrv` CI job) plus GStreamer, GTK 4, libadwaita, and PipeWire development
+packages:
 
 ```bash
-# Fedora (the dev target)
+# Fedora (primary dev target)
 sudo dnf install gcc pkgconf-pkg-config clang-devel \
   gstreamer1-devel gstreamer1-plugins-base-devel gstreamer1-plugins-bad-free-devel \
   gtk4-devel libadwaita-devel pipewire-devel \
   gstreamer1-plugins-base gstreamer1-plugins-good
 
-# Debian / Ubuntu (what CI uses)
+# Debian / Ubuntu (used in CI)
 sudo apt install build-essential pkg-config libclang-dev \
   libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
   libgtk-4-dev libadwaita-1-dev \
@@ -30,80 +31,87 @@ sudo zypper install gcc pkgconf clang-devel gstreamer-devel gstreamer-plugins-ba
   gtk4-devel libadwaita-devel pipewire-devel gstreamer-plugins-good
 ```
 
-`clang` is for bindgen in `pipewire-sys`/`libspa-sys`; GitHub's Ubuntu runners
-ship it, a fresh Debian or Ubuntu doesn't. The GUI needs libadwaita 1.7, so
-Ubuntu 24.04 and Debian 12 build the daemon and CLI only
-(`cargo build -p vinoopeneffects-daemon -p vinoopeneffects-ctl`). On Fedora
-Atomic or openSUSE Aeon, install these in a toolbox or distrobox
-([install.md](install.md#fedora-atomic-and-other-image-based-distros)).
+Notes:
 
-To run the GUI's live preview you also need the GStreamer PipeWire source and
-GTK 4 sink:
+- `clang` is needed for `bindgen` in `pipewire-sys`/`libspa-sys` (GitHub's
+  Ubuntu runners preinstall it, whereas a fresh Debian or Ubuntu machine does
+  not).
+- The GUI requires libadwaita 1.7, so on Ubuntu 24.04 and Debian 12 build only
+  the daemon and CLI
+  (`cargo build -p vinoopeneffects-daemon -p vinoopeneffects-ctl`).
+- On Fedora Atomic or openSUSE Aeon, install these packages inside a toolbox or
+  distrobox ([install.md](install.md#fedora-atomic-and-other-image-based-distros)).
 
-| | PipeWire source | GTK 4 sink |
+For the GUI live preview, install the GStreamer PipeWire source and GTK 4 sink:
+
+| Distro | PipeWire source | GTK 4 sink |
 |---|---|---|
 | Fedora | `pipewire-gstreamer` | `gstreamer1-plugin-gtk4` |
 | Debian / Ubuntu | `gstreamer1.0-pipewire` | `gstreamer1.0-gtk4` |
 | Arch | `gst-plugin-pipewire` | `gst-plugin-gtk4` |
 | openSUSE | `gstreamer-plugin-pipewire` | `gstreamer-plugins-rs` |
 
-That is enough to build and to run `cargo test --workspace`. Two more things
-are needed to run the models, and the tests that use them skip without them:
+Those packages are sufficient to compile the workspace and run
+`cargo test --workspace`. To run ML inference (and enable the model-backed tests
+that otherwise skip), you also need:
 
-- **onnxruntime.** The default `npu` build loads `libonnxruntime.so` at runtime,
-  for CPU inference as well as NPU. It comes from ovfetch only:
+- **ONNX Runtime:** The default `npu` build dynamically loads
+  `libonnxruntime.so` for both CPU and NPU inference. Install it via `ovfetch`:
   `cargo install ovfetch --locked`, then
   `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort` (or point
-  `ORT_DYLIB_PATH` at another ovfetch prefix). `cargo build --no-default-features`
-  links a CPU-only runtime statically and needs neither.
-- **Models.** `scripts/fetch-models.sh` downloads the four bundled models into
-  `~/.local/share/vinoopeneffects/models`, checking each against its manifest's
-  sha256. It is idempotent.
+  `ORT_DYLIB_PATH` at an existing `ovfetch` prefix). Building with
+  `cargo build --no-default-features` links a CPU-only runtime statically
+  instead.
+- **Models:** Run `scripts/fetch-models.sh` (idempotent) to download and
+  SHA-256-verify the four bundled models into
+  `~/.local/share/vinoopeneffects/models`.
 
-`core` builds and tests with none of the system packages above; the `core` CI
-job proves that on every PR.
+The `core` crate builds and tests without any of the system packages above, as
+verified by the `core` CI job on every PR.
 
 ## Running your own build
 
-`scripts/install.sh` builds a release and installs it into `~/.local` (binaries,
-D-Bus activation file and interfaces, systemd user unit, desktop entry, icon,
-models and an onnxruntime), so a checkout can be the install. It doesn't restart
-anything that's already running:
+`scripts/install.sh` builds a release binary and installs everything into
+`~/.local` (binaries, D-Bus activation file and interfaces, systemd user unit,
+desktop entry, icon, models, and ONNX Runtime). It does not restart a running
+daemon:
 
 ```bash
 scripts/install.sh                       # rebuild and reinstall; verified models and runtime are kept
 systemctl --user restart vinoopeneffects-daemon
 ```
 
-Then reopen the GUI, and re-select the camera in any app that had it open. For a
-quick loop on the daemon alone, run it in a terminal instead:
+Reopen the GUI afterward, and re-select the camera in any app that already had
+it open. To iterate quickly on the daemon alone, stop the service and run it in
+the foreground:
 
 ```bash
 systemctl --user stop vinoopeneffects-daemon
 RUST_LOG=debug cargo run -p vinoopeneffects-daemon -- --start
 ```
 
-`scripts/uninstall.sh` removes the install, your models and the compile cache
-(`--purge` also removes config and backgrounds).
+Run `scripts/uninstall.sh` to remove the installation, user models, and compile
+cache (add `--purge` to also remove configuration and backgrounds).
 
 ## Tests
 
 ```bash
-cargo test --workspace                    # everything
+cargo test --workspace                    # full test suite
 cargo test -p vinoopeneffects-core        # pure logic, no media stack
-cargo test -p vinoopeneffects-core gesture   # one module
+cargo test -p vinoopeneffects-core gesture   # single module
 ```
 
-Tests never need a camera, an NPU, an audio server or a running daemon.
-Anything that does is either skipped at runtime with a `skipping: ...` line
-(models, onnxruntime, NPU) or `#[ignore]`d with the reason (the D-Bus round trips
-in `tests/integration`, which need a daemon on the session bus). Run those by
-hand with `cargo test -- --ignored` against a running daemon.
+Tests never require a camera, NPU, audio server, or running daemon. Tests that
+depend on models, ONNX Runtime, or an NPU print a `skipping: ...` line and pass
+when unavailable; D-Bus round-trip tests in `tests/integration` are marked
+`#[ignore]` and can be run manually against a live daemon with
+`cargo test -- --ignored`.
 
-**Golden frames.** `core/src/effects/golden_tests.rs` runs the whole effect
-chain on synthetic frames, with the mask and faces injected, and pins the output
-byte for byte as SHA-256 digests. A refactor must leave them unchanged. If a
-change is meant to alter the output, update the digest and say so in the PR.
+**Golden frames:** `core/src/effects/golden_tests.rs` runs the full effect chain
+on synthetic frames with injected masks and face boxes, pinning pixel outputs
+byte-for-byte via SHA-256 digests. Refactors should leave these digests
+unchanged; if a change intentionally alters rendering output, update the digest
+and call it out in the PR description.
 
 ## CI
 
@@ -113,64 +121,67 @@ change is meant to alter the output, update the digest and say so in the PR.
 |---|---|
 | `fmt` | `cargo fmt --all --check` |
 | `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| `test` | `cargo test --workspace` under `xvfb-run`, so the GUI's accessibility tests (`gui/src/a11y_tests.rs`) build real widgets; `VINOOPENEFFECTS_REQUIRE_DISPLAY=1` makes them fail rather than skip if GTK can't start |
-| `core` | Crate boundaries (`core` links no GStreamer, GTK or PipeWire; the GUI and CLI depend on `shared` only), then `core`'s tests with no system packages installed |
-| `coverage` | `cargo llvm-cov` (without `daemon/src/bench.rs`): a summary in the job output, `lcov.info` as the `lcov` artifact, and an upload to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), which comments on each PR; fails below 57% line coverage (a Coveralls outage never fails it) |
-| `build-npu` | `cargo check` of the daemon with and without default features |
-| `msrv` | `cargo +1.92 test --workspace --no-run`: builds the tests and dev-dependencies too, not only the binaries |
-| `install` | `shellcheck scripts/*.sh`; `install.sh` must refuse an unwritable prefix before building; then `install.sh --no-models` into a scratch prefix, a check of every installed file, a second install over it (the upgrade path), and `install.sh --uninstall` from a `file://` fake release, which must leave nothing behind in the prefix and delete the models and compile cache from a scratch `HOME` while keeping its backgrounds and settings (then `--purge` must remove those) |
-| `release-bundle` | Builds the same `git archive` bundle as `release.yml` with a made-up tag, builds the CLI from it with `--locked`, and checks `--version` reports `dev`, then the tag when `VINOOPENEFFECTS_VERSION` is set |
-| `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, sources) |
-| `fedora` | `cargo build` and `cargo test --locked` in a `fedora:latest` container with Fedora's own rustc. Not required, since a new Fedora release can break it on its own |
+| `test` | `cargo test --workspace` under `xvfb-run` so GUI accessibility tests (`gui/src/a11y_tests.rs`) build real widgets; `VINOOPENEFFECTS_REQUIRE_DISPLAY=1` turns GTK startup failures into test failures |
+| `core` | Verifies crate boundaries (`core` does not link GStreamer, GTK, or PipeWire; GUI and CLI depend on `shared` only) and runs `core` tests with no media/GUI system packages installed |
+| `coverage` | `cargo llvm-cov` (excluding `daemon/src/bench.rs`): prints summary, uploads `lcov.info` artifact and reports to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), failing below 57% line coverage (Coveralls outages do not fail the job) |
+| `build-npu` | `cargo check` of the daemon both with and without default features |
+| `msrv` | `cargo +1.92 test --workspace --no-run` (verifies binaries, tests, and dev-dependencies compile on MSRV) |
+| `install` | Runs `shellcheck scripts/*.sh`, verifies `install.sh` refuses an unwritable prefix before building, runs `install.sh --no-models` into a scratch prefix, verifies all installed files, tests upgrading in place, and runs `install.sh --uninstall` from a `file://` fake release (checking prefix cleanup, model/cache deletion in scratch `HOME`, retention of backgrounds/settings, and `--purge` cleanup) |
+| `release-bundle` | Creates the same `git archive` bundle as `release.yml` with a synthetic tag, builds the CLI with `--locked`, and checks `--version` reports `dev` by default and the tag when `VINOOPENEFFECTS_VERSION` is set |
+| `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, and crate sources) |
+| `fedora` | `cargo build` and `cargo test --locked` inside `fedora:latest` with Fedora's `rustc` (non-blocking, since new Fedora releases can introduce independent breakage) |
 
-Without a display (the `fedora` job, or a plain local
-`cargo test` over SSH) the GUI widget test prints `skipping: no display` and
-passes; the CSS contrast checks beside it always run.
+Without a display (the `fedora` job, or running `cargo test` over SSH), GUI
+widget tests print `skipping: no display` and pass while the accompanying CSS
+contrast checks still run.
 
-CI has no models, so the model-backed tests skip there. `models.yml` runs them
-for real: it fetches the models and the CPU onnxruntime, runs
-`cargo test --workspace`, and fails if any test printed a skip. It runs on PRs
-that touch the models, the fetch scripts, the inference code or the daemon pipeline that calls it, weekly with the
-cache bypassed (so a moved upstream file shows up there first), and by hand. It
-is separate from `ci.yml` so a model-host outage never blocks an unrelated PR.
+Because `ci.yml` does not download models, model-backed tests are covered by a
+separate workflow, `models.yml`. It fetches the models and CPU ONNX Runtime,
+runs `cargo test --workspace`, and fails if any test skips. It triggers on PRs
+touching models, fetch scripts, inference code, or the daemon pipeline, runs
+weekly with caching bypassed (to detect moved upstream files early), and can be
+triggered manually. Keeping it separate prevents upstream model-host outages
+from blocking unrelated PRs.
 
-Every action is pinned to a commit SHA with a version comment, and Dependabot
-groups cargo and action updates weekly after a 7-day cooldown.
+All GitHub Actions are pinned to commit SHAs with version comments, and
+Dependabot batches Cargo and Action updates weekly after a 7-day cooldown.
 
 ## Releases
 
-Releases are consecutive numbers (`v1`, `v2`, ...), not semver: a release is
-`main` at that point, and the number only says which one is newer. The inherited
-upstream tags (`v0.1.x`) count by their first number, so the first release is
-`v1`. There is no schedule; cut one when `main` has a user-facing change worth
-installing.
+Releases use sequential numbers (`v1`, `v2`, ...) rather than semver: each tag
+marks a snapshot of `main`, and higher numbers are newer. Inherited upstream
+tags (`v0.1.x`) count under `0`, so the first fork release is `v1`. Releases are
+cut whenever `main` has user-facing changes worth shipping.
 
 ```bash
-scripts/release.sh --dry-run                               # next tag, and the PRs merged since the last one
-git cliff --unreleased --tag vN --prepend CHANGELOG.md     # vN from the dry run; then merge this through a PR
-scripts/release.sh                                         # from an up-to-date main: tag origin/main's head, push the tag
+scripts/release.sh --dry-run                               # show next tag and merged PRs since last release
+git cliff --unreleased --tag vN --prepend CHANGELOG.md     # vN from dry run; merge via PR
+scripts/release.sh                                         # from up-to-date main: tag origin/main and push
 ```
 
-`release.sh` refuses to tag until `CHANGELOG.md` on `main` has the new tag's
-section. Pushing the tag runs `.github/workflows/release.yml`, which checks the
-tag is on `main` and has a changelog section, then publishes a GitHub Release
-with that section as its notes, a source bundle
-(`vinoopeneffects-vN-source.tar.gz`), the prebuilt binaries
-(`vinoopeneffects-x86_64-linux.tar.gz`, built on CI's Ubuntu 26.04 image),
-`install.sh` and `SHA256SUMS` ([install.md](install.md#from-a-release)). The crate version in `Cargo.toml` is not
-the release number and doesn't change with it. The version the GUI's About
-dialog and `vinoopeneffects-ctl --version` show comes from
-`shared/src/version.rs`: the `vN` tag when the build had `VINOOPENEFFECTS_VERSION`
-set (only the release workflow's `binaries` job does), else `dev`. A build from a
-checkout or the source bundle is `dev`, even at a tag.
+How tagging and versioning work:
+
+- `release.sh` refuses to tag until `CHANGELOG.md` on `main` contains a section
+  for `vN`.
+- Pushing the tag runs `.github/workflows/release.yml`, which verifies the tag
+  is on `main` and present in `CHANGELOG.md`, then publishes a GitHub Release
+  with the changelog section as notes, a source archive
+  (`vinoopeneffects-vN-source.tar.gz`), prebuilt binaries
+  (`vinoopeneffects-x86_64-linux.tar.gz`, compiled on Ubuntu 26.04),
+  `install.sh`, and `SHA256SUMS` ([install.md](install.md#from-a-release)).
+- The crate version in `Cargo.toml` is separate from the release number and does
+  not bump per release. The version displayed by the GUI About dialog and
+  `vinoopeneffects-ctl --version` comes from `shared/src/version.rs`: it shows
+  `vN` only when built with `VINOOPENEFFECTS_VERSION` set (as in the release
+  workflow's `binaries` job), and `dev` for source checkouts or source bundles
+  even at a tagged commit.
 
 ### Changelog
 
-`CHANGELOG.md` is generated by [git-cliff](https://git-cliff.org) from
-conventional commits (`feat:`, `fix:`, `docs:`, ...), using `cliff.toml`. Merge
-commits and commits without a conventional prefix are left out, so the prefix
-is what gets a change into the changelog.
+`CHANGELOG.md` is generated with [git-cliff](https://git-cliff.org) from
+conventional commits (`feat:`, `fix:`, `docs:`, ...) using `cliff.toml`. Merge
+commits and commits without a conventional prefix are omitted.
 
 ```bash
-git cliff --unreleased            # preview what the next release would list
+git cliff --unreleased            # preview unreleased changelog entries
 ```
