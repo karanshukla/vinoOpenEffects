@@ -145,7 +145,7 @@ fn run_inner(
             }
         })
         .process(|stream, ud| {
-            let Some(mut buffer) = stream.dequeue_buffer() else {
+            let Some(buffer) = Dequeued::new(stream) else {
                 return;
             };
             {
@@ -174,11 +174,10 @@ fn run_inner(
                 *chunk.size_mut() = written as u32;
             }
 
-            if let Some(header) = buffer.find_meta::<spa::buffer::meta::MetaHeader>() {
-                let h = header as *const spa::buffer::meta::MetaHeader
-                    as *mut pw::spa::sys::spa_meta_header;
-                // SAFETY: the producer owns the buffer's shared meta region for this cycle;
-                // pipewire-rs just exposes it read-only.
+            if let Some(h) = buffer.header_meta() {
+                // SAFETY: `h` points into this dequeued buffer's meta region, which the
+                // producer may write until it queues the buffer back, and nothing else
+                // borrows it.
                 unsafe {
                     (*h).flags = 0;
                     (*h).offset = 0;
@@ -224,6 +223,75 @@ fn run_inner(
     mainloop.run();
     info!("provide node loop exited");
     Ok(())
+}
+
+/// A buffer dequeued from `stream`, queued back when dropped. pipewire-rs's
+/// `Buffer` only hands out the header meta as `&MetaHeader`, and writing
+/// through a shared reference is undefined behaviour, so this keeps the raw
+/// `spa_buffer` to reach the meta through a pointer that may write.
+struct Dequeued<'s> {
+    stream: &'s pw::stream::Stream,
+    buf: std::ptr::NonNull<pw::sys::pw_buffer>,
+}
+
+impl<'s> Dequeued<'s> {
+    fn new(stream: &'s pw::stream::Stream) -> Option<Self> {
+        // SAFETY: a pointer from `dequeue_raw_buffer` is queued back exactly
+        // once, in `drop`.
+        let buf = std::ptr::NonNull::new(unsafe { stream.dequeue_raw_buffer() })?;
+        Some(Self { stream, buf })
+    }
+
+    fn spa_buffer(&self) -> *mut spa::sys::spa_buffer {
+        // SAFETY: `buf` is a live dequeued `pw_buffer` until `drop`.
+        unsafe { self.buf.as_ref().buffer }
+    }
+
+    #[allow(clippy::mut_from_ref)] // the slice aliases the buffer's own memory, not `self`
+    fn datas_mut(&self) -> &mut [spa::buffer::Data] {
+        let b = self.spa_buffer();
+        // SAFETY: as pipewire-rs's `Buffer::datas_mut`: `Data` is a transparent
+        // `spa_data`, and the array lives as long as the dequeued buffer. One
+        // call per cycle, so no two slices alias.
+        unsafe {
+            if b.is_null() || (*b).n_datas == 0 || (*b).datas.is_null() {
+                return &mut [];
+            }
+            std::slice::from_raw_parts_mut(
+                (*b).datas.cast::<spa::buffer::Data>(),
+                (*b).n_datas as usize,
+            )
+        }
+    }
+
+    /// The buffer's `SPA_META_Header`, if it carries one big enough.
+    fn header_meta(&self) -> Option<*mut spa::sys::spa_meta_header> {
+        let b = self.spa_buffer();
+        if b.is_null() {
+            return None;
+        }
+        // SAFETY: `metas` holds `n_metas` entries for as long as the buffer is dequeued.
+        unsafe {
+            if (*b).metas.is_null() {
+                return None;
+            }
+            std::slice::from_raw_parts((*b).metas, (*b).n_metas as usize)
+                .iter()
+                .find(|m| {
+                    m.type_ == spa::sys::SPA_META_Header
+                        && m.size as usize >= std::mem::size_of::<spa::sys::spa_meta_header>()
+                        && !m.data.is_null()
+                })
+                .map(|m| m.data.cast::<spa::sys::spa_meta_header>())
+        }
+    }
+}
+
+impl Drop for Dequeued<'_> {
+    fn drop(&mut self) {
+        // SAFETY: `buf` came from this stream's `dequeue_raw_buffer` and is queued once.
+        unsafe { self.stream.queue_raw_buffer(self.buf.as_ptr()) }
+    }
 }
 
 /// Whether a consumer is streaming in this state; `None` while it has yet to settle.
