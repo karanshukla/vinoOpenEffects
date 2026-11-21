@@ -135,7 +135,7 @@ pub(crate) fn composite_low(
 
 /// `#RRGGBB` → RGBA bytes.
 fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
-    if hex.len() != 6 {
+    if !hex.is_ascii() || hex.len() != 6 {
         return None;
     }
     let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -148,6 +148,7 @@ fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
 fn load_image_rgba(path: &str, w: usize, h: usize) -> anyhow::Result<Vec<u8>> {
     let src = image::ImageReader::open(path)?.decode()?.to_rgba8();
     let (sw, sh) = (src.width() as usize, src.height() as usize);
+    anyhow::ensure!(sw > 0 && sh > 0, "empty background image");
     let mut out = vec![0u8; w * h * 4];
     for y in 0..h {
         let sy = (y * sh / h).min(sh - 1);
@@ -159,4 +160,17 @@ fn load_image_rgba(path: &str, w: usize, h: usize) -> anyhow::Result<Vec<u8>> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_hex_color_handles_multi_byte_utf8_without_panicking() {
+        assert_eq!("€€".len(), 6);
+        assert_eq!(parse_hex_color("€€"), None);
+        assert_eq!(parse_hex_color("ff0080"), Some([255, 0, 128, 255]));
+        assert_eq!(parse_hex_color("ff00"), None);
+    }
 }

@@ -8,6 +8,13 @@ Type=dbus
 BusName=io.github.karanshukla.vinoopeneffects.Daemon
 ExecStart=@bindir@/vinoopeneffects-daemon --start
 Restart=on-failure
+UMask=0077
+NoNewPrivileges=yes
+# AF_NETLINK: udev, for the camera device monitor.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=graphical-session.target
