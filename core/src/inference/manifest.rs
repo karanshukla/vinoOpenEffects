@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use shared::checksum::sha256_hex;
+use shared::doctor::models::is_plain_file_name;
 
 /// Model manifest: describes a model's I/O tensors, supported
 /// execution providers, and downloadable variants (with sha256 for
@@ -81,15 +82,6 @@ impl ModelManifest {
             (digest == variant.sha256).then_some((variant, path))
         })
     }
-}
-
-/// A bare file name: `dir.join` replaces `dir` for an absolute path, and `..` walks out of it.
-fn is_plain_file_name(file: &str) -> bool {
-    let mut parts = Path::new(file).components();
-    matches!(
-        (parts.next(), parts.next()),
-        (Some(std::path::Component::Normal(_)), None)
-    )
 }
 
 #[cfg(test)]
@@ -236,14 +228,6 @@ sha256 = "cafebabe"
                 "{file:?} resolved"
             );
         }
-    }
-
-    #[test]
-    fn plain_file_names_are_accepted() {
-        assert!(is_plain_file_name("selfie_segmentation.onnx"));
-        assert!(!is_plain_file_name("a/b.onnx"));
-        assert!(!is_plain_file_name(".."));
-        assert!(!is_plain_file_name("/abs.onnx"));
     }
 
     #[test]

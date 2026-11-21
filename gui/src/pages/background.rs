@@ -775,4 +775,13 @@ mod widget_tests {
             assert_eq!(rgba_to_hex(&RGBA::new(2.0, -1.0, 0.0, 1.0)), "#ff0000");
         });
     }
+
+    #[test]
+    fn only_rrggbb_reaches_the_swatch_css() {
+        assert!(is_valid_hex_color("#ff0080"));
+        assert!(is_valid_hex_color("#FF0080"));
+        assert!(!is_valid_hex_color("ff0080"));
+        assert!(!is_valid_hex_color("#ff00"));
+        assert!(!is_valid_hex_color("#fff; } * { color: red"));
+    }
 }

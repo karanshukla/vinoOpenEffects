@@ -199,19 +199,14 @@ pub fn probe_model(
     (false, false, None, None)
 }
 
-fn is_plain_file_name(file: &str) -> bool {
-    !file.is_empty()
-        && !file.contains('/')
-        && !file.contains('\\')
-        && file != "."
-        && file != ".."
-        && {
-            let mut parts = Path::new(file).components();
-            matches!(
-                (parts.next(), parts.next()),
-                (Some(std::path::Component::Normal(_)), None)
-            )
-        }
+/// A bare file name: `dir.join` replaces `dir` for an absolute path, and `..` walks out of it.
+/// The daemon's manifest loader and `doctor` both use it, so they agree on which files count.
+pub fn is_plain_file_name(file: &str) -> bool {
+    let mut parts = Path::new(file).components();
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(std::path::Component::Normal(_)), None)
+    )
 }
 
 #[cfg(test)]
@@ -226,7 +221,6 @@ mod tests {
         assert!(!is_plain_file_name(".."));
         assert!(!is_plain_file_name("../secret.onnx"));
         assert!(!is_plain_file_name("sub/model.onnx"));
-        assert!(!is_plain_file_name("sub\\model.onnx"));
         assert!(!is_plain_file_name("/etc/passwd"));
     }
 

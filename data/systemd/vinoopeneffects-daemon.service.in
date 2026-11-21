@@ -10,7 +10,8 @@ ExecStart=@bindir@/vinoopeneffects-daemon --start
 Restart=on-failure
 UMask=0077
 NoNewPrivileges=yes
-RestrictAddressFamilies=AF_UNIX
+# AF_NETLINK: udev, for the camera device monitor.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
 LockPersonality=yes
 SystemCallArchitectures=native
 RestrictSUIDSGID=yes

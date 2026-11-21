@@ -352,6 +352,15 @@ fn build_source(app: &AppState) -> Result<gst::Element> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn only_dev_video_n_is_opened_unenumerated() {
+        assert!(is_v4l2_video_node("/dev/video0"));
+        assert!(is_v4l2_video_node("/dev/video12"));
+        assert!(!is_v4l2_video_node("/dev/video"));
+        assert!(!is_v4l2_video_node("/dev/video0/../sda"));
+        assert!(!is_v4l2_video_node("/dev/videox"));
+    }
+
     fn failure(rx: &std::sync::mpsc::Receiver<WorkerMsg>) -> Option<(u64, String)> {
         match rx.try_recv().ok()? {
             WorkerMsg::CaptureFailed { id, error } => Some((id, error)),

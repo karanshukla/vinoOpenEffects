@@ -74,12 +74,11 @@ if [ "$as_root" = 1 ]; then
 fi
 
 # The models and what's compiled from them; the backgrounds beside them stay.
-# Run as the unprivileged user so root never follows symlinks inside $SUDO_USER's home.
-user_session rm -rf "$user_data/vinoopeneffects/models" "$user_cache/vinoopeneffects" || true
-user_session rmdir "$user_data/vinoopeneffects" 2>/dev/null || true
+rm -rf "$user_data/vinoopeneffects/models" "$user_cache/vinoopeneffects"
+rmdir "$user_data/vinoopeneffects" 2>/dev/null || true
 
 if [ "$purge" = 1 ]; then
-    user_session rm -rf "$user_data/vinoopeneffects" "$user_config/vinoopeneffects" || true
+    rm -rf "$user_data/vinoopeneffects" "$user_config/vinoopeneffects"
 fi
 
 if command -v busctl >/dev/null 2>&1; then
