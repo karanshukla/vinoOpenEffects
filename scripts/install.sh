@@ -89,9 +89,10 @@ ovfetch_pin_version=0.6.0
 ovfetch_pin_sha256=d99be9f6aeee45d50f8f2041a2efa992955215d43f3150bef58d6426f163f2e3
 
 ovfetch="$(command -v ovfetch || true)"
-# sudo's secure_path drops ~/.cargo/bin, where `cargo install` put it.
-if [ -z "$ovfetch" ] && [ -n "$user_home" ] && [ -x "$user_home/.cargo/bin/ovfetch" ]; then
-    ovfetch="$user_home/.cargo/bin/ovfetch"
+# Never execute a binary from the unprivileged user's home directory as root;
+# fall back to downloading the SHA-256-pinned ovfetch release binary instead.
+if [ "$as_root" = 0 ] && [ -z "$ovfetch" ] && [ -x "$HOME/.cargo/bin/ovfetch" ]; then
+    ovfetch="$HOME/.cargo/bin/ovfetch"
 fi
 ovfetch_ok() {
     local have

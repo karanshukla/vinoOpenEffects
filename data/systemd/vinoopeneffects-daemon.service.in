@@ -8,6 +8,12 @@ Type=dbus
 BusName=io.github.karanshukla.vinoopeneffects.Daemon
 ExecStart=@bindir@/vinoopeneffects-daemon --start
 Restart=on-failure
+UMask=0077
+NoNewPrivileges=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=graphical-session.target

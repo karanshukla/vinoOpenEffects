@@ -135,7 +135,7 @@ pub(crate) fn composite_low(
 
 /// `#RRGGBB` → RGBA bytes.
 fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
-    if hex.len() != 6 {
+    if !hex.is_ascii() || hex.len() != 6 {
         return None;
     }
     let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
@@ -144,10 +144,32 @@ fn parse_hex_color(hex: &str) -> Option<[u8; 4]> {
     Some([r, g, b, 255])
 }
 
+const MAX_BG_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+
 /// Decode an image file and nearest-neighbor rescale it to `w`×`h` RGBA.
 fn load_image_rgba(path: &str, w: usize, h: usize) -> anyhow::Result<Vec<u8>> {
-    let src = image::ImageReader::open(path)?.decode()?.to_rgba8();
+    use std::io::Read;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    let meta = file.metadata()?;
+    anyhow::ensure!(meta.is_file(), "background path is not a regular file");
+    anyhow::ensure!(
+        meta.len() <= MAX_BG_IMAGE_BYTES,
+        "background image exceeds 32 MiB limit"
+    );
+    let mut bytes = Vec::new();
+    file.take(MAX_BG_IMAGE_BYTES + 1).read_to_end(&mut bytes)?;
+    anyhow::ensure!(
+        bytes.len() as u64 <= MAX_BG_IMAGE_BYTES,
+        "background image exceeds 32 MiB limit"
+    );
+    let src = image::load_from_memory(&bytes)?.to_rgba8();
     let (sw, sh) = (src.width() as usize, src.height() as usize);
+    anyhow::ensure!(sw > 0 && sh > 0, "empty background image");
     let mut out = vec![0u8; w * h * 4];
     for y in 0..h {
         let sy = (y * sh / h).min(sh - 1);
@@ -159,4 +181,17 @@ fn load_image_rgba(path: &str, w: usize, h: usize) -> anyhow::Result<Vec<u8>> {
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_hex_color_handles_multi_byte_utf8_without_panicking() {
+        assert_eq!("€€".len(), 6);
+        assert_eq!(parse_hex_color("€€"), None);
+        assert_eq!(parse_hex_color("ff0080"), Some([255, 0, 128, 255]));
+        assert_eq!(parse_hex_color("ff00"), None);
+    }
 }

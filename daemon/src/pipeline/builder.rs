@@ -312,7 +312,7 @@ pub(crate) fn resolve_camera(app: &AppState) -> Option<cameras::CameraInfo> {
         if let Some(info) = cameras::enumerate().into_iter().find(|c| c.id == selected) {
             return Some(info);
         }
-        if selected.starts_with("/dev/video") {
+        if is_v4l2_video_node(selected) {
             return Some(cameras::CameraInfo {
                 id: selected.to_string(),
                 name: selected.to_string(),
@@ -327,6 +327,11 @@ pub(crate) fn resolve_camera(app: &AppState) -> Option<cameras::CameraInfo> {
     }
 
     cameras::autodetect()
+}
+
+fn is_v4l2_video_node(path: &str) -> bool {
+    path.strip_prefix("/dev/video")
+        .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
 }
 
 fn build_source(app: &AppState) -> Result<gst::Element> {

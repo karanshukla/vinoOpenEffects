@@ -343,9 +343,11 @@ impl Widgets {
             if let Some(idx) = BG_PRESETS.iter().position(|(_, h)| *h == bg) {
                 self.swatches[idx].set_active(true);
                 BG_PRESETS[idx].0.to_string()
-            } else {
+            } else if is_valid_hex_color(bg) {
                 set_custom_color(&self.custom_provider, bg);
                 "Custom color".to_string()
+            } else {
+                String::new()
             }
         } else if !bg.is_empty() {
             if let Some((label, _, button)) = self
@@ -549,9 +551,10 @@ fn image_box_child(class: &str) -> gtk::Box {
 /// Write the bundled preset background images to the user's data dir (if not
 /// already present) and return their paths: the daemon loads backgrounds from disk.
 fn ensure_preset_images() -> Vec<(&'static str, PathBuf)> {
-    let dir = dirs::data_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("vinoopeneffects/backgrounds");
+    let Some(base_dir) = dirs::data_dir().or_else(dirs::runtime_dir) else {
+        return Vec::new();
+    };
+    let dir = base_dir.join("vinoopeneffects/backgrounds");
     let _ = std::fs::create_dir_all(&dir);
     BG_IMAGE_PRESETS
         .iter()
@@ -565,7 +568,15 @@ fn ensure_preset_images() -> Vec<(&'static str, PathBuf)> {
         .collect()
 }
 
+fn is_valid_hex_color(hex: &str) -> bool {
+    hex.strip_prefix('#')
+        .is_some_and(|rest| rest.len() == 6 && rest.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 fn set_custom_color(provider: &gtk::CssProvider, hex: &str) {
+    if !is_valid_hex_color(hex) {
+        return;
+    }
     provider.load_from_string(&format!(
         ".{CUSTOM_SWATCH_CLASS} {{ background-color: {hex}; }}"
     ));
