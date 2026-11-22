@@ -108,7 +108,7 @@ Other effect timings on the same XPS 13:
 
 Both models reshape on the NPU, but each shape requires its own compile with a
 fixed scale factor. At 720p output only `-1032` fits alongside the other models,
-and its 320×180 input matches Center Stage's maximum 4× zoom—any lighter zoom
+and its 320×180 input matches Center Stage's maximum 4× zoom, so any lighter zoom
 would have to downscale the crop before upscaling. Center Stage therefore uses
 bilinear upscaling for now.
 

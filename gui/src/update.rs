@@ -77,12 +77,12 @@ fn check() -> Result<Found, String> {
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
-        .map_err(|_| "curl isn't installed.".to_string())?;
+        .map_err(|_| "Could not check for updates: curl is not installed.".to_string())?;
     if !out.status.success() {
-        return Err("Couldn't reach GitHub to check. Try again when you're online.".into());
+        return Err("Could not reach GitHub. Check your internet connection and try again.".into());
     }
     let latest = latest_tag(&String::from_utf8_lossy(&out.stdout))
-        .ok_or_else(|| "GitHub's answer had no release in it.".to_string())?;
+        .ok_or_else(|| "Could not read the latest release from GitHub.".to_string())?;
     Ok(if is_newer(CURRENT, &latest) {
         Found::Newer(latest)
     } else {
@@ -98,7 +98,7 @@ fn install(upgrade: PathBuf, tag: String) -> Result<(), String> {
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
-        .map_err(|e| format!("Couldn't run {}: {e}.", upgrade.display()))?;
+        .map_err(|e| format!("Could not run {}: {e}.", upgrade.display()))?;
     if out.status.success() {
         return Ok(());
     }
@@ -130,18 +130,18 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
     glib::spawn_future_local(async move {
         let found = gio::spawn_blocking(check)
             .await
-            .unwrap_or_else(|_| Err("The check stopped.".into()));
+            .unwrap_or_else(|_| Err("The update check did not finish.".into()));
         match found {
             Ok(Found::Newer(tag)) => offer(&parent, tag),
             Ok(Found::Latest(latest)) => {
                 let body = if parts(CURRENT).is_some() {
-                    format!("vinoOpenEffects {CURRENT} is the newest release.")
+                    format!("vinoOpenEffects {CURRENT} is up to date.")
                 } else {
-                    format!("The newest release is {latest}. This is a development build.")
+                    format!("This is a development build. The latest release is {latest}.")
                 };
                 alert("Up to Date", &body).present(Some(&parent));
             }
-            Err(why) => alert("Couldn't Check for Updates", &why).present(Some(&parent)),
+            Err(why) => alert("Could Not Check for Updates", &why).present(Some(&parent)),
         }
     });
 }
@@ -150,11 +150,11 @@ fn offer(parent: &gtk::Widget, tag: String) {
     let upgrade = upgrade_command();
     let body = if upgrade.is_some() {
         format!(
-            "{tag} is out. Updating restarts the effects daemon, so the camera pauses for a moment."
+            "{tag} is available. Updating will restart the effects daemon and briefly pause the camera."
         )
     } else {
         format!(
-            "{tag} is out. This install wasn't made by the release installer; its release page says how to update."
+            "{tag} is available. This installation was not created by the release installer. See the release page for update instructions."
         )
     };
     let dialog = adw::AlertDialog::new(Some("Update Available"), Some(&body));
@@ -191,7 +191,7 @@ fn offer(parent: &gtk::Widget, tag: String) {
 fn run_install(parent: &gtk::Widget, upgrade: PathBuf, tag: String) {
     let progress = adw::AlertDialog::new(
         Some(&format!("Installing {tag}")),
-        Some("This can take a few minutes."),
+        Some("This may take a few minutes."),
     );
     progress.set_can_close(false);
     progress.present(Some(parent));
@@ -200,7 +200,7 @@ fn run_install(parent: &gtk::Widget, upgrade: PathBuf, tag: String) {
         let for_thread = tag.clone();
         let result = gio::spawn_blocking(move || install(upgrade, for_thread))
             .await
-            .unwrap_or_else(|_| Err("The update stopped before it finished.".into()));
+            .unwrap_or_else(|_| Err("The update process exited unexpectedly.".into()));
         progress.set_can_close(true);
         progress.force_close();
         let (heading, body) = match result {
@@ -208,7 +208,7 @@ fn run_install(parent: &gtk::Widget, upgrade: PathBuf, tag: String) {
                 "Updated".to_string(),
                 format!("Restart vinoOpenEffects to use {tag}."),
             ),
-            Err(why) => (format!("Couldn't Install {tag}"), why),
+            Err(why) => (format!("Could Not Install {tag}"), why),
         };
         alert(&heading, &body).present(Some(&parent));
     });

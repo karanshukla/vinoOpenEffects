@@ -46,7 +46,7 @@ for any missing runtime dependency on your distro.
 ### Fedora Atomic and other image-based distros
 
 Because `/usr` is read-only, use the default `~/.local` install (`/usr/local`
-also works—on Fedora Atomic it maps to `/var/usrlocal`). Nothing requires root
+also works; on Fedora Atomic it maps to `/var/usrlocal`). Nothing requires root
 or a kernel module, and the [release install](#from-a-release) needs no build
 tools, so run it directly on the host:
 
@@ -132,7 +132,7 @@ scripts/install.sh --build-runtime          # let ovfetch compile a newer OpenVI
 ```
 
 For a system-wide install, compile as your regular user first and then run the
-installer with `sudo` (when run as root, `install.sh` refuses to compile so it
+installer with `sudo` (when run as root, `install.sh` skips compilation so it
 never leaves a root-owned `target/` directory in your checkout):
 
 ```bash
@@ -141,7 +141,7 @@ sudo scripts/install.sh --prefix /usr/local
 ```
 
 When invoked under `sudo`, `install.sh` locates `ovfetch` in your `~/.cargo/bin`
-even if `sudo`'s `secure_path` strips it (if `ovfetch` lives elsewhere, run
+even if `sudo`'s `secure_path` strips it (if `ovfetch` is installed elsewhere, run
 `sudo env PATH="$PATH" scripts/install.sh ...`), warns if source files are newer
 than the build, installs models under the prefix instead of root's home, and
 reloads your user session's D-Bus and systemd instances rather than root's. Pass
@@ -165,7 +165,7 @@ Files installed under the prefix:
 driver, or the newest build on machines without an NPU (it also bundles the CPU
 provider, so one runtime covers both NPU and CPU).
 
-If `ovfetch install` fails or refuses to downgrade a newer local build (for
+If `ovfetch install` fails or will not downgrade a newer local build (for
 example, one built with `ovfetch install --build`), `install.sh` falls back to
 the existing runtime with a warning as long as `ovfetch verify` succeeds;
 otherwise it aborts with `ovfetch`'s error. Passing `--build-runtime` forwards
@@ -173,7 +173,7 @@ otherwise it aborts with `ovfetch`'s error. Passing `--build-runtime` forwards
 
 At the end of the install, the script reloads the D-Bus session bus so the
 daemon is immediately activatable, and warns if `bin/` is not on `PATH`. It does
-not restart an already-running daemon—run
+not restart an already-running daemon; run
 `systemctl --user restart vinoopeneffects-daemon` to pick up the new binary.
 
 By default the daemon starts on demand on the first client request. To start it
@@ -217,23 +217,23 @@ Hyprland also install `xdg-desktop-portal-gtk`.
 
 ## Files at runtime
 
-- `~/.config/vinoopeneffects/state.toml` — effect settings, selected camera, and
+- `~/.config/vinoopeneffects/state.toml`: effect settings, selected camera, and
   inference provider, maintained by the daemon. If parsing fails, the file is
   moved to `state.toml.bad-<time>` instead of being overwritten.
-- `~/.config/vinoopeneffects/gui.toml` — GUI-only preferences.
-- `~/.local/share/vinoopeneffects/backgrounds/` — preset background images
+- `~/.config/vinoopeneffects/gui.toml`: GUI-only preferences.
+- `~/.local/share/vinoopeneffects/backgrounds/`: preset background images
   extracted from the GUI binary on first launch.
-- `~/.local/share/vinoopeneffects/models/` — downloaded models (the daemon also
+- `~/.local/share/vinoopeneffects/models/`: downloaded models (the daemon also
   searches `share/vinoopeneffects/models` under its own prefix,
   `/usr/local/share`, and `/usr/share`).
-- `~/.cache/vinoopeneffects/openvino/` — NPU compiled-model cache so subsequent
+- `~/.cache/vinoopeneffects/openvino/`: NPU compiled-model cache so subsequent
   starts skip model compilation.
 
 In the GUI, **Downloaded Models** under Preferences shows the combined size of
 your user models and compile cache and can delete both. It stops the daemon
 first (D-Bus restarts it when the window reconnects, briefly pausing the camera)
 and preserves backgrounds and settings. It never modifies system-wide models
-under `/usr/local` or `/usr`—if those exist, effects continue using them. To
+under `/usr/local` or `/usr`; if those exist, effects continue using them. To
 re-download models later, run `vinoopeneffects-upgrade` (release install) or
 `scripts/fetch-models.sh` (source checkout).
 

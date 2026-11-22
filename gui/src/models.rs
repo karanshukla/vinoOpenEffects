@@ -128,7 +128,7 @@ pub fn delete(paths: &UserPaths) -> Result<(), String> {
     }
     paths
         .delete()
-        .map_err(|err| format!("Couldn't delete {}: {err}.", paths.models.display()))
+        .map_err(|err| format!("Could not delete {}: {err}.", paths.models.display()))
 }
 
 /// `path` with the home directory shown as `~`.

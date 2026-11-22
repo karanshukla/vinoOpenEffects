@@ -28,8 +28,8 @@ pub struct Widgets {
     npu: Cell<bool>,
 }
 
-const AUTO_LIGHT_SUBTITLE: &str = "A low-light model that brightens a dim room";
-const AUTO_LIGHT_NO_NPU: &str = "Needs an Intel NPU";
+const AUTO_LIGHT_SUBTITLE: &str = "Low-light model that brightens dim scenes";
+const AUTO_LIGHT_NO_NPU: &str = "Requires an Intel NPU";
 
 fn build_card(cmd_tx: &CmdTx) -> EffectCard {
     let cmd_tx = cmd_tx.clone();
@@ -62,7 +62,7 @@ fn build_auto_light_switch(cmd_tx: &CmdTx) -> (adw::SwitchRow, gtk::glib::Signal
 pub fn build(cmd_tx: &CmdTx) -> Widgets {
     let card = build_card(cmd_tx);
 
-    let on_you = plain_row(&section_label("On You"));
+    let on_you = plain_row(&section_label("Subject"));
     let (intensity_row, intensity) = slider_row_u32(
         "Intensity",
         "",
@@ -105,10 +105,10 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         "auto_strength",
         cmd_tx,
     );
-    let behind_you = plain_row(&section_label("Behind You"));
+    let behind_you = plain_row(&section_label("Background"));
     let (bg_row, bg_brightness) = slider_row_i32(
         "Brightness",
-        "Darken or brighten the room so you stand out",
+        "Darken or brighten the background",
         -100.0,
         100.0,
         1.0,
@@ -182,7 +182,7 @@ impl Widgets {
         if let Some(on) = params.get("enabled").and_then(value_as_bool) {
             self.card.set_on(on);
             self.card.set_summary(if on {
-                "Lifts you, settles the room"
+                "Foreground and background lighting"
             } else {
                 "Off"
             });
@@ -277,7 +277,7 @@ mod widget_tests {
             let (tx, mut rx) = channel_pair();
             let (row, _handler) = build_auto_light_switch(&tx);
             assert_eq!(row.title(), "Brighten Dark Frames");
-            assert_eq!(row.subtitle().as_deref(), Some("Needs an Intel NPU"));
+            assert_eq!(row.subtitle().as_deref(), Some("Requires an Intel NPU"));
             row.set_active(true);
             let sent = drain(&mut rx);
             match sent.as_slice() {
@@ -303,7 +303,7 @@ mod widget_tests {
                 .filter_map(|c| c.downcast::<gtk::Label>().ok())
                 .map(|l| l.label().to_string())
                 .collect();
-            assert_eq!(headings, ["On You", "Auto Light", "Behind You"]);
+            assert_eq!(headings, ["Subject", "Auto Light", "Background"]);
             assert!(widgets.rows[5].is::<adw::SwitchRow>());
             assert_eq!(widgets.rows[6], widgets.auto_strength_row);
         });

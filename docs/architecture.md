@@ -21,7 +21,7 @@ The project ships three binaries. Only the daemon accesses the camera, ML
 models, or PipeWire; the GUI and CLI are stateless D-Bus clients. CI enforces
 this separation: the `core` job fails if `vinoopeneffects-core` links GStreamer,
 GTK, libadwaita, or PipeWire, or if either client depends on `core` or `daemon`
-rather than `shared` alone (preventing ONNX Runtime from being dragged into the
+rather than `shared` alone (preventing ONNX Runtime from being linked into the
 GUI).
 
 | Crate | Responsibilities |
@@ -142,7 +142,7 @@ node, because consumers only renegotiate formats on reconnect.
 - **Camera selection:** Uses the configured camera if present (honoring an
   explicit `/dev/videoN` even if `DeviceMonitor` missed it), otherwise
   autodetects. When a device appears under both V4L2 and PipeWire providers,
-  V4L2 wins because `v4l2src` on `/dev/videoN` requires no PipeWire camera
+  V4L2 takes precedence because `v4l2src` on `/dev/videoN` requires no PipeWire camera
   permission grant (whereas `pipewiresrc` fails with `target not found` without
   one). `pipewiresrc` is reserved for PipeWire nodes without a V4L2 device path.
 - **Native mode pinning:** The source capsfilter pins the camera to the virtual
@@ -253,7 +253,7 @@ the mean is too noisy and the previous pivot is held.
 
 **Auto light** uses an IAT low-light model on the NPU only (it takes ~850 ms per
 frame on CPU, so it never runs on CPU). Rather than using the model's RGB output
-directly—which over-brightens well-lit scenes and shifts colors—vinoOpenEffects
+directly (which over-brightens well-lit scenes and shifts colors), vinoOpenEffects
 extracts only the luminance ratio relative to the input as a low-resolution gain
 map, EMA-smooths it, applies it to the full-resolution frame, and fades it out
 with a mean-luma gate in well-lit rooms. Without an NPU or the model file, Auto

@@ -126,7 +126,7 @@ and call it out in the PR description.
 | `coverage` | `cargo llvm-cov` (excluding `daemon/src/bench.rs`): prints summary, uploads `lcov.info` artifact and reports to [Coveralls](https://coveralls.io/github/karanshukla/vinoOpenEffects), failing below 57% line coverage (Coveralls outages do not fail the job) |
 | `build-npu` | `cargo check` of the daemon both with and without default features |
 | `msrv` | `cargo +1.92 test --workspace --no-run` (verifies binaries, tests, and dev-dependencies compile on MSRV) |
-| `install` | Runs `shellcheck scripts/*.sh`, verifies `install.sh` refuses an unwritable prefix before building, runs `install.sh --no-models` into a scratch prefix, verifies all installed files, tests upgrading in place, and runs `install.sh --uninstall` from a `file://` fake release (checking prefix cleanup, model/cache deletion in scratch `HOME`, retention of backgrounds/settings, and `--purge` cleanup) |
+| `install` | Runs `shellcheck scripts/*.sh`, verifies `install.sh` rejects an unwritable prefix before building, runs `install.sh --no-models` into a scratch prefix, verifies all installed files, tests upgrading in place, and runs `install.sh --uninstall` from a `file://` fake release (checking prefix cleanup, model/cache deletion in scratch `HOME`, retention of backgrounds/settings, and `--purge` cleanup) |
 | `release-bundle` | Creates the same `git archive` bundle as `release.yml` with a synthetic tag, builds the CLI with `--locked`, and checks `--version` reports `dev` by default and the tag when `VINOOPENEFFECTS_VERSION` is set |
 | `deny` | `cargo deny check` (`deny.toml`: licenses, advisories, and crate sources) |
 | `fedora` | `cargo build` and `cargo test --locked` inside `fedora:latest` with Fedora's `rustc` (non-blocking, since new Fedora releases can introduce independent breakage) |
@@ -161,8 +161,8 @@ scripts/release.sh                                         # from up-to-date mai
 
 How tagging and versioning work:
 
-- `release.sh` refuses to tag until `CHANGELOG.md` on `main` contains a section
-  for `vN`.
+- `release.sh` requires `CHANGELOG.md` on `main` to contain a section for `vN`
+  before tagging.
 - Pushing the tag runs `.github/workflows/release.yml`, which verifies the tag
   is on `main` and present in `CHANGELOG.md`, then publishes a GitHub Release
   with the changelog section as notes, a source archive

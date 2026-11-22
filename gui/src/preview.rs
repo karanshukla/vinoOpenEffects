@@ -111,7 +111,7 @@ fn build_picture() -> gtk::Picture {
         .build();
     picture.update_property(&[
         gtk::accessible::Property::Label("Camera preview"),
-        gtk::accessible::Property::Description("The virtual camera's output, with effects applied"),
+        gtk::accessible::Property::Description("Virtual camera output with effects applied"),
     ]);
     picture
 }
@@ -237,7 +237,7 @@ fn build_compare_button() -> gtk::Button {
     content.append(&gtk::Label::new(Some("Hold to Compare")));
     gtk::Button::builder()
         .child(&content)
-        .tooltip_text("Hold to see your camera without effects")
+        .tooltip_text("Hold to view the raw camera feed without effects")
         .halign(gtk::Align::Start)
         .valign(gtk::Align::End)
         .margin_start(14)
@@ -249,7 +249,7 @@ fn build_compare_button() -> gtk::Button {
 fn build_node_pill() -> gtk::Label {
     gtk::Label::builder()
         .label(VCAM_NODE_NAME)
-        .tooltip_text("Pick this camera in Zoom, OBS or your browser")
+        .tooltip_text("Select this camera in Zoom, OBS, or your browser")
         .halign(gtk::Align::End)
         .valign(gtk::Align::End)
         .margin_end(14)
@@ -304,7 +304,7 @@ impl Preview {
                 && preview.attempt.get() == attempt
                 && !preview.has_frames.get()
             {
-                preview.show_problem("No picture from the virtual camera yet");
+                preview.show_problem("No video from the virtual camera yet");
             }
         });
 
@@ -350,7 +350,8 @@ impl Preview {
     fn on_error(&self, message: &str) {
         self.drop_pipeline();
         self.show_problem(&if message.contains("target not found") {
-            "PipeWire can't find the virtual camera. The camera service may be stuck.".to_string()
+            "PipeWire cannot find the virtual camera. The camera service may need a restart."
+                .to_string()
         } else {
             format!("Preview error: {message}")
         });
@@ -491,7 +492,7 @@ fn missing_plugin() -> Option<String> {
     .find(|(element, _, _)| gst::ElementFactory::find(element).is_none())
     .map(|(_, what, packages)| (what, packages))?;
     Some(format!(
-        "The preview needs GStreamer's {what} plugin. Install {packages}, then try again"
+        "The preview requires the GStreamer {what} plugin. Install {packages} and try again."
     ))
 }
 
@@ -618,7 +619,7 @@ mod widget_tests {
             assert!(button.has_css_class("oe-pill-button"));
             assert_eq!(
                 button.tooltip_text().as_deref(),
-                Some("Hold to see your camera without effects")
+                Some("Hold to view the raw camera feed without effects")
             );
             let content = button.child().unwrap();
             let parts = children(&content);

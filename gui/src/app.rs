@@ -172,7 +172,7 @@ fn build_bypass_toggle(cmd_tx: &CmdTx) -> (gtk::Box, gtk::Switch, glib::SignalHa
     let bypass_switch = gtk::Switch::builder()
         .valign(gtk::Align::Center)
         .active(true)
-        .tooltip_text("Toggle all effects. Off passes the camera through untouched.")
+        .tooltip_text("Toggle all effects. When off, the raw camera feed passes through unchanged.")
         .build();
     bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
     let bypass_handler = {
@@ -530,8 +530,8 @@ struct StatusBanner {
 fn status_banner(status: &str) -> Option<StatusBanner> {
     let (title, startable) = match status {
         "stopped" => ("Virtual camera stopped", true),
-        "error" => ("Virtual camera stopped by an error", true),
-        "disconnected" => ("Can't reach the effects daemon", false),
+        "error" => ("Virtual camera stopped due to an error", true),
+        "disconnected" => ("Cannot reach the effects daemon", false),
         _ => return None,
     };
     Some(StatusBanner { title, startable })
@@ -567,7 +567,9 @@ fn apply_capabilities(w: &Widgets, caps: &VariantMap) {
     w.prefs.models_group.set_description(if ready {
         None
     } else {
-        Some("Run the installer again to fetch them; vinoopeneffects-ctl doctor lists what's missing")
+        Some(
+            "Run the installer again to download missing models, or run vinoopeneffects-ctl doctor to list them.",
+        )
     });
     w.preview.node_pill.set_label(&vcam);
 
@@ -621,7 +623,7 @@ fn apply_inference(
     w.prefs.inference_toggle_npu.set_enabled(has_npu);
     w.studio_light.set_npu_available(has_npu);
     if !has_npu {
-        let tip = detail.unwrap_or("No Intel NPU, or no OpenVINO runtime for it");
+        let tip = detail.unwrap_or("No Intel NPU or OpenVINO runtime available");
         w.prefs.inference_toggle_npu.set_tooltip(tip);
     } else {
         w.prefs.inference_toggle_npu.set_tooltip("");
@@ -648,8 +650,8 @@ fn apply_inference_banner(w: &Widgets, degraded: bool, detail: Option<&str>) {
     }
     let reason = detail
         .filter(|d| !d.is_empty())
-        .unwrap_or("the NPU is not usable");
-    let message = format!("Effects run on CPU: {reason}");
+        .unwrap_or("the NPU is unavailable");
+    let message = format!("Running effects on CPU: {reason}");
     let title = glib::markup_escape_text(&message);
     let changed = !w.inference_banner.is_revealed() || w.inference_banner.title() != title;
     w.inference_banner.set_title(&title);
@@ -670,9 +672,9 @@ fn set_inference_status(w: &Widgets, active: &str, detail: &str) {
         format!("Falling back to CPU: {detail}")
     } else {
         match active {
-            "npu" => "Using the NPU",
-            "mixed" => "Using the NPU and the CPU",
-            _ => "Using the CPU",
+            "npu" => "Using NPU",
+            "mixed" => "Using NPU and CPU",
+            _ => "Using CPU",
         }
         .to_string()
     };

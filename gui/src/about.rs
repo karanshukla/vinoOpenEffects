@@ -12,7 +12,7 @@ const SITE: (&str, &str) = ("vinopilot.ca", "https://vinopilot.ca/");
 const OTHER_APPS: [(&str, &str, &str); 7] = [
     (
         "vinoPilot",
-        "One app to install and update the rest",
+        "Install and update vinoPilot apps",
         "https://vinopilot.ca/apps/#vinopilot",
     ),
     (
@@ -27,7 +27,7 @@ const OTHER_APPS: [(&str, &str, &str); 7] = [
     ),
     (
         "vinoPop",
-        "AI actions on any text you select",
+        "AI actions for selected text",
         "https://vinopilot.ca/apps/#vinopop",
     ),
     (
@@ -37,12 +37,12 @@ const OTHER_APPS: [(&str, &str, &str); 7] = [
     ),
     (
         "vinoSearch",
-        "Find files by what they're about",
+        "Search local files by meaning",
         "https://vinopilot.ca/apps/#vinosearch",
     ),
     (
         "vinoWatch",
-        "See what your NPU is doing",
+        "Monitor NPU usage and activity",
         "https://vinopilot.ca/apps/#vinowatch",
     ),
 ];
@@ -52,7 +52,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
         .application_name("vinoOpenEffects")
         .application_icon(APP_ID)
         .version(shared::version::VERSION)
-        .comments("Linux-native webcam effects engine")
+        .comments("Real-time webcam effects for Linux")
         .developer_name("Karan Shukla")
         .developers(["Karan Shukla https://github.com/karanshukla"])
         .copyright("© 2026 Karan Shukla\nBased on openeffects © Aryan Kushwaha and contributors")

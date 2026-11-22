@@ -135,7 +135,10 @@ pub fn package_remedy(plugin: &GstPlugin, distro: Option<&DistroInfo>) -> (Strin
 }
 
 fn image_remedy(pkg: &str) -> (String, String) {
-    (pkg.into(), format!("add {pkg} with your image's tool"))
+    (
+        pkg.into(),
+        format!("install {pkg} using your image's package tool"),
+    )
 }
 
 fn generic_remedy(plugin: &GstPlugin) -> (String, String) {
@@ -210,11 +213,11 @@ pub fn gtk_versions_verdict(gtk_ver: Option<&str>, adw_ver: Option<&str>) -> Che
             "libraries",
             Status::Warn,
             format!(
-                "GTK {gtk}, Libadwaita {adw}: the GUI needs Libadwaita {}.{} or newer",
+                "GTK {gtk}, Libadwaita {adw}: GUI requires Libadwaita {}.{} or newer",
                 MIN_ADW.0, MIN_ADW.1
             ),
             Some(
-                "use the CLI (scripts/install.sh --no-gui), or a newer distro release for the GUI"
+                "use the CLI (scripts/install.sh --no-gui) or upgrade to a newer distro release for the GUI"
                     .into(),
             ),
         ),
@@ -374,14 +377,17 @@ mod tests {
         let endless = distro("ID=endless\nID_LIKE=debian\n", true);
         let (pkg, cmd) = package_remedy(&PIPEWIRE_SRC, Some(&endless));
         assert_eq!(pkg, "gstreamer1.0-pipewire");
-        assert_eq!(cmd, "add gstreamer1.0-pipewire with your image's tool");
+        assert_eq!(
+            cmd,
+            "install gstreamer1.0-pipewire using your image's package tool"
+        );
         let steamos = DistroInfo {
             read_only: true,
             ..distro("ID=steamos\nID_LIKE=arch\n", false)
         };
         assert_eq!(
             package_remedy(&GTK4_SINK, Some(&steamos)).1,
-            "add gst-plugin-gtk4 with your image's tool"
+            "install gst-plugin-gtk4 using your image's package tool"
         );
         let suse = DistroInfo {
             read_only: true,
