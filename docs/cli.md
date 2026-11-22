@@ -1,8 +1,8 @@
-# `vinoopeneffects-ctl` — CLI reference
+# `vinoopeneffects-ctl` CLI reference
 
-`vinoopeneffects-ctl` is the command-line control surface for the vinoOpenEffects daemon.
-It is a stateless D-Bus client: every command talks to a running `vinoopeneffects-daemon`
-over the session bus, so the daemon must be up first.
+`vinoopeneffects-ctl` is the command-line client for the vinoOpenEffects daemon.
+It is a stateless D-Bus client: every command communicates with a running `vinoopeneffects-daemon`
+over the session bus, so the daemon must be running first.
 
 ```bash
 systemctl --user start vinoopeneffects-daemon   # or: vinoopeneffects-daemon --start
@@ -39,7 +39,7 @@ vinoopeneffects-ctl status
 | `vinoopeneffects-ctl doctor`         | Run diagnostic checks across daemon, NPU, models, cameras, and pipeline.                            |
 | `vinoopeneffects-ctl watch`          | Stream `EffectChanged` signals until interrupted (Ctrl-C).                                          |
 
-Any command that talks to the daemon starts it first if it isn't already running
+Any command targeting the daemon starts it first if it is not already running
 (via the systemd user unit, falling back to D-Bus activation).
 
 ## Inference execution provider (`inference`)
@@ -51,7 +51,7 @@ vinoopeneffects-ctl inference          # show requested, active, available EPs, 
 vinoopeneffects-ctl inference npu      # switch to Intel NPU (OpenVINO EP)
 vinoopeneffects-ctl inference cpu      # switch to CPU
 vinoopeneffects-ctl inference auto     # auto-select NPU if present, CPU otherwise
-vinoopeneffects-ctl inference --retry  # forget a recorded NPU compile failure and reload
+vinoopeneffects-ctl inference --retry  # clear a recorded NPU compile failure and reload
 vinoopeneffects-ctl inference --json   # machine-readable output
 ```
 

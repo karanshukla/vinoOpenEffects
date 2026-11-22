@@ -48,7 +48,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     }
 
     let hint = gtk::Label::builder()
-        .label("Turn the switch on to trigger these with hand gestures")
+        .label("Enable the switch above to trigger reactions with hand gestures")
         .xalign(0.0)
         .wrap(true)
         .css_classes(["caption", "dim-label"])
@@ -58,7 +58,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         .orientation(gtk::Orientation::Vertical)
         .spacing(8)
         .build();
-    body.append(&section_label("Tap to Send"));
+    body.append(&section_label("Click to Send"));
     body.append(&emoji_flow);
     body.append(&hint);
     card.add_row(&plain_row(&body));
@@ -78,9 +78,9 @@ impl Widgets {
     fn apply_on(&self, on: bool) {
         self.card.set_on(on);
         self.card.set_summary(if on {
-            "Gestures on · tap to send"
+            "Gestures on · click to send"
         } else {
-            "Gestures off · tap to send"
+            "Gestures off · click to send"
         });
     }
 }

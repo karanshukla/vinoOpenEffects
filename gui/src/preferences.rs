@@ -119,7 +119,7 @@ fn add_camera_group(page: &adw::PreferencesPage, cmd_tx: &CmdTx) -> CameraGroup 
 
     let virtual_cam_row = adw::ActionRow::builder()
         .title("Virtual Camera")
-        .subtitle("Pick this one in Zoom, OBS or your browser")
+        .subtitle("Select this camera in Zoom, OBS, or your browser")
         .build();
     let virtual_cam_label = gtk::Label::builder()
         .label("—")
@@ -150,12 +150,12 @@ struct ProcessorGroup {
 fn add_processor_group(page: &adw::PreferencesPage, cmd_tx: &CmdTx) -> ProcessorGroup {
     let group_box = pref_group(
         "Processor",
-        "Where the effect models run. Auto picks the NPU when there is one",
+        "Choose where effect models run. Auto uses the NPU when available.",
     );
 
     let row = adw::ActionRow::builder()
         .title("Run Models On")
-        .subtitle("Using the CPU")
+        .subtitle("Using CPU")
         .build();
 
     let toggle_auto = adw::Toggle::builder().name("auto").label("Auto").build();
@@ -227,7 +227,7 @@ fn add_startup_group(page: &adw::PreferencesPage, gui_config: &Rc<RefCell<GuiCon
 
     let keep_running_row = adw::SwitchRow::builder()
         .title("Run in Background")
-        .subtitle("Leave the daemon on after this window closes")
+        .subtitle("Keep the daemon running after this window closes")
         .active(gui_config.borrow().keep_running_in_background)
         .build();
 
@@ -240,8 +240,8 @@ fn add_startup_group(page: &adw::PreferencesPage, gui_config: &Rc<RefCell<GuiCon
     // sway/Hyprland without systemd integration never start the target the unit hangs off.
     if shared::systemd::session_target_active() == Some(false) {
         boot_row.set_subtitle(
-            "Your session doesn't start graphical-session.target, so this won't take effect. \
-             Start the daemon from your compositor's config instead",
+            "Your session does not start graphical-session.target, so this setting will not take effect. \
+             Start the daemon from your compositor configuration instead.",
         );
     }
 
@@ -322,7 +322,7 @@ fn refresh_delete_row(row: &adw::ActionRow, button: &gtk::Button) {
             (on_disk(paths.size(), &models::tilde(&paths.models)), true)
         }
         _ => (
-            "None downloaded. Models installed system-wide stay where they are".to_string(),
+            "No user models downloaded. System-wide models are not affected.".to_string(),
             false,
         ),
     };
@@ -343,20 +343,20 @@ fn confirm_body(system: &[PathBuf], upgrade: bool) -> String {
     };
     let effect = if system.is_empty() {
         format!(
-            "Portrait blur, background replace, Center Stage and gesture reactions stop \
-             working until you download the models again: {fetch}."
+            "Portrait blur, background replace, Center Stage, and gesture reactions will stop \
+             working until you download the models again ({fetch})."
         )
     } else {
         let dirs: Vec<String> = system.iter().map(|d| d.display().to_string()).collect();
         format!(
-            "The models installed system-wide in {} stay, and the effects use those. \
-             To download your own copy again, {fetch}.",
+            "System-wide models in {} will remain installed and will be used for effects. \
+             To download a per-user copy again, {fetch}.",
             dirs.join(" and ")
         )
     };
     format!(
-        "{effect} The effects daemon restarts, so the camera pauses for a moment. \
-         Your backgrounds and settings are kept."
+        "{effect} The effects daemon will restart, briefly pausing the camera. \
+         Your backgrounds and settings will be kept."
     )
 }
 
@@ -366,7 +366,7 @@ fn run_delete(button: &gtk::Button, paths: UserPaths, refresh: impl Fn() + 'stat
     glib::spawn_future_local(async move {
         let result = gio::spawn_blocking(move || models::delete(&paths))
             .await
-            .unwrap_or_else(|_| Err("The delete stopped before it finished.".into()));
+            .unwrap_or_else(|_| Err("Deleting models did not finish.".into()));
         refresh();
         match result {
             Ok(()) => {
@@ -378,7 +378,7 @@ fn run_delete(button: &gtk::Button, paths: UserPaths, refresh: impl Fn() + 'stat
                 }
             }
             Err(why) => {
-                let alert = adw::AlertDialog::new(Some("Couldn't Delete Models"), Some(&why));
+                let alert = adw::AlertDialog::new(Some("Could Not Delete Models"), Some(&why));
                 alert.add_response("close", "Close");
                 alert.set_close_response("close");
                 alert.present(Some(&button));
@@ -396,7 +396,7 @@ mod delete_tests {
         let release = confirm_body(&[], true);
         assert!(release.contains("vinoopeneffects-upgrade"));
         assert!(release.contains("stop working"));
-        assert!(release.contains("backgrounds and settings are kept"));
+        assert!(release.contains("backgrounds and settings will be kept"));
         let checkout = confirm_body(&[], false);
         assert!(checkout.contains("scripts/fetch-models.sh"));
     }
@@ -407,7 +407,7 @@ mod delete_tests {
             &[PathBuf::from("/usr/local/share/vinoopeneffects/models")],
             true,
         );
-        assert!(body.contains("/usr/local/share/vinoopeneffects/models stay"));
+        assert!(body.contains("/usr/local/share/vinoopeneffects/models will remain installed"));
         assert!(!body.contains("stop working"));
     }
 

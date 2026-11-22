@@ -39,7 +39,7 @@ service with `systemctl --user stop vinoopeneffects-daemon` and run
 | `daemon: systemd` | The systemd user unit is missing or failed | Check `journalctl --user -u vinoopeneffects-daemon -e` |
 | `inference: build` | Built with `--no-default-features` (CPU-only) | Rebuild with default features for NPU support |
 | `inference: onnxruntime` | `libonnxruntime.so` is missing or lacks the OpenVINO provider (no models run without it, including on CPU) | Run `ovfetch install --prefix ~/.local/lib/vinoopeneffects/ort`, or set `ORT_DYLIB_PATH` |
-| `inference: npu` | No `/dev/accel/accel*` bound to `intel_vpu` (no Intel NPU—other vendors' NPUs such as AMD's are not used—or driver not loaded). A warning means the node exists without open permission (Debian/Ubuntu restrict it to the `render` group) | Normal on systems without an Intel NPU (`auto` uses CPU). For the permission warning: `sudo usermod -aG render $USER`, then log out and back in |
+| `inference: npu` | No `/dev/accel/accel*` bound to `intel_vpu` (no Intel NPU or driver not loaded; non-Intel NPUs such as AMD's are not supported). A warning means the node exists without open permission (Debian/Ubuntu restrict it to the `render` group) | Normal on systems without an Intel NPU (`auto` uses CPU). For the permission warning: `sudo usermod -aG render $USER`, then log out and back in |
 | `inference: npu-failure` | A model failed to compile for the NPU on this driver/runtime pair, so `auto` stays on CPU | Check `ovfetch detect`, then run `vinoopeneffects-ctl inference --retry` |
 | `models: <id>` | Model file is missing or failed SHA-256 verification against its manifest | Run `scripts/fetch-models.sh` |
 | `camera: devices` | No V4L2 or PipeWire camera found | Connect a webcam and check `ls /dev/video*` |
@@ -79,7 +79,7 @@ virtual camera. If it never opens when a consumer connects, check `doctor`'s
 `camera: selected` line and the daemon journal to see which device failed and
 why.
 
-### The GUI preview says "PipeWire can't find the virtual camera"
+### The GUI preview says "PipeWire cannot find the virtual camera"
 
 WirePlumber lost track of the virtual camera node. Click **Restart Camera
 Services** in the preview, or run
