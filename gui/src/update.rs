@@ -149,13 +149,9 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
 fn offer(parent: &gtk::Widget, tag: String) {
     let upgrade = upgrade_command();
     let body = if upgrade.is_some() {
-        format!(
-            "{tag} is available. Updating will restart the effects daemon and briefly pause the camera."
-        )
+        format!("{tag} is available. Updating restarts the daemon and briefly pauses the camera.")
     } else {
-        format!(
-            "{tag} is available. This installation was not created by the release installer. See the release page for update instructions."
-        )
+        format!("{tag} is available. See the GitHub release page for manual update instructions.")
     };
     let dialog = adw::AlertDialog::new(Some("Update Available"), Some(&body));
     dialog.add_response("cancel", "Not Now");

@@ -350,8 +350,7 @@ impl Preview {
     fn on_error(&self, message: &str) {
         self.drop_pipeline();
         self.show_problem(&if message.contains("target not found") {
-            "PipeWire cannot find the virtual camera. The camera service may need a restart."
-                .to_string()
+            "PipeWire cannot find the virtual camera. Restart the camera service.".to_string()
         } else {
             format!("Preview error: {message}")
         });

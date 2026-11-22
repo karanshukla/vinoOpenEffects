@@ -567,9 +567,7 @@ fn apply_capabilities(w: &Widgets, caps: &VariantMap) {
     w.prefs.models_group.set_description(if ready {
         None
     } else {
-        Some(
-            "Run the installer again to download missing models, or run vinoopeneffects-ctl doctor to list them.",
-        )
+        Some("Re-run the installer to download models; vinoopeneffects-ctl doctor lists missing files")
     });
     w.preview.node_pill.set_label(&vcam);
 
