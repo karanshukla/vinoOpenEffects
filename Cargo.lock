@@ -563,7 +563,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -823,7 +823,7 @@ dependencies = [
  "gobject-sys",
  "libc",
  "system-deps",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1911,7 +1911,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2186,7 +2186,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2493,7 +2493,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vinoopeneffects-shared",
- "zbus 5.19.0",
+ "zbus",
  "zbus_xml",
  "zbus_xmlgen",
  "zvariant",
@@ -2528,7 +2528,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vinoopeneffects-shared",
- "zbus 5.19.0",
+ "zbus",
  "zvariant",
 ]
 
@@ -2553,7 +2553,7 @@ dependencies = [
  "tracing-subscriber",
  "vinoopeneffects-core",
  "vinoopeneffects-shared",
- "zbus 5.19.0",
+ "zbus",
  "zbus_xml",
  "zvariant",
 ]
@@ -2567,7 +2567,7 @@ dependencies = [
  "gstreamer-app",
  "tokio",
  "vinoopeneffects-shared",
- "zbus 5.19.0",
+ "zbus",
  "zvariant",
 ]
 
@@ -2585,7 +2585,7 @@ dependencies = [
  "thiserror",
  "toml",
  "tracing",
- "zbus 5.19.0",
+ "zbus",
  "zvariant",
 ]
 
@@ -2945,38 +2945,9 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "winnow",
- "zbus_macros 5.19.0",
+ "zbus_macros",
  "zbus_names",
  "zvariant",
-]
-
-[[package]]
-name = "zbus"
-version = "6.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a7f9f5dd97fa527c1202ba1cb35d48e07f77d4de8542317c854f7aef22b0668"
-dependencies = [
- "async-trait",
- "bitflags",
- "endi",
- "futures-core",
- "hex",
- "libc",
- "ordered-stream",
- "rustix",
- "serde",
- "serde_repr",
- "socket2",
- "tokio",
- "tracing",
- "uds_windows",
- "uuid",
- "windows-sys 0.61.2",
- "winnow",
- "zbus_macros 6.5.0",
- "zbus_utils",
- "zcheapstr",
- "zruntime",
 ]
 
 [[package]]
@@ -2995,18 +2966,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zbus_macros"
-version = "6.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f5aa7f2c4ea81b7ccfb26bafefdb4d1a44dd9d4f82c8426173a3727311743e4"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
- "zbus_utils",
-]
-
-[[package]]
 name = "zbus_names"
 version = "4.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3018,37 +2977,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "zbus_utils"
-version = "6.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af55e52da295311b368c45bcae221f020e28e97a2420360170ce389218e76ec7"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde",
- "syn 3.0.9",
- "winnow",
-]
-
-[[package]]
 name = "zbus_xml"
-version = "6.0.0"
+version = "5.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d21954afb379fe9389d5aaa8a91f9e1a19b58f72061a78199162ea39e63c801a"
+checksum = "d1586c021a01ca0a9216dcd874e546382e156a5cbab5fab6cb5f10087e22682a"
 dependencies = [
+ "serde",
  "winnow",
- "zbus 6.5.0",
+ "zbus_names",
+ "zvariant",
 ]
 
 [[package]]
 name = "zbus_xmlgen"
-version = "6.0.1"
+version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02b13987eb5e8e2cd3eadd2f9b2426bf4afd3cf540f30b585c327155441e86ac"
+checksum = "d2ff944456ec70ca49d93457fb47444f22d8c622d390941bda956202268867b9"
 dependencies = [
  "clap",
  "snakecase",
- "zbus 6.5.0",
+ "zbus",
  "zbus_xml",
 ]
 
@@ -3072,20 +3020,6 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
-
-[[package]]
-name = "zruntime"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac67096b97c00742108c4674db6bb6178adb78c4b66a506b0e4a7a9593aa5d9e"
-dependencies = [
- "futures-core",
- "futures-io",
- "rustix",
- "socket2",
- "tracing",
- "windows-sys 0.61.2",
-]
 
 [[package]]
 name = "zune-core"

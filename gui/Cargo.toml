@@ -33,5 +33,5 @@ tempfile = "3"
 
 [build-dependencies]
 zbus = { version = "5", features = ["tokio"] }
-zbus_xmlgen = "6"
-zbus_xml = "6"
+zbus_xmlgen = "5"
+zbus_xml = "5"
