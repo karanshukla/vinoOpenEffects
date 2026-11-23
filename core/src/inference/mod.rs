@@ -97,8 +97,7 @@ pub fn probe_npu() -> NpuProbe {
             reason: Some(format!("onnxruntime library unavailable: {e}")),
         };
     }
-    let ep = ort::ep::OpenVINO::default().with_device_type("NPU");
-    if !ep.is_available().unwrap_or(false) {
+    if !ort::ep::OpenVINO::is_available().unwrap_or(false) {
         return NpuProbe {
             available: false,
             reason: Some(format!(
@@ -187,6 +186,7 @@ fn npu_blocker(provider: &str) -> Option<Option<String>> {
 fn base_builder() -> anyhow::Result<ort::session::builder::SessionBuilder> {
     use ort::memory::{AllocationDevice, AllocatorType, MemoryInfo, MemoryType};
     ensure_runtime()?;
+    let env = environment()?;
     let cpu = MemoryInfo::new(
         AllocationDevice::CPU,
         0,
@@ -194,7 +194,7 @@ fn base_builder() -> anyhow::Result<ort::session::builder::SessionBuilder> {
         MemoryType::Default,
     )
     .map_err(|e| anyhow::anyhow!("create CPU memory info: {e}"))?;
-    ort::session::Session::builder()
+    ort::session::Session::builder(env)
         .map_err(|e| anyhow::anyhow!("create ORT session builder: {e}"))?
         .with_intra_threads(INTRA_THREADS)
         .map_err(|e| anyhow::anyhow!("set intra-op threads: {e}"))?
@@ -356,10 +356,29 @@ fn runtime_dirs() -> Vec<std::path::PathBuf> {
 /// ort's panic when none can be found.
 #[cfg(feature = "npu")]
 pub(crate) fn ensure_runtime() -> anyhow::Result<()> {
+    load_runtime()
+        .as_ref()
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// The process-wide ort environment, created once the runtime is loaded. ort
+/// only keeps a weak handle, so this static is what keeps it alive.
+#[cfg(feature = "npu")]
+fn environment() -> anyhow::Result<&'static ort::environment::Environment> {
+    load_runtime()
+        .as_ref()
+        .map(|(_, env)| env)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+#[cfg(feature = "npu")]
+fn load_runtime() -> &'static Result<(std::path::PathBuf, ort::environment::Environment), String> {
     use std::path::PathBuf;
     use std::sync::OnceLock;
-    static LOADED: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    let loaded = LOADED.get_or_init(|| {
+    static LOADED: OnceLock<Result<(PathBuf, ort::environment::Environment), String>> =
+        OnceLock::new();
+    LOADED.get_or_init(|| {
         let path = match std::env::var_os("ORT_DYLIB_PATH").filter(|v| !v.is_empty()) {
             Some(p) => PathBuf::from(p),
             None => runtime_dirs()
@@ -369,23 +388,24 @@ pub(crate) fn ensure_runtime() -> anyhow::Result<()> {
                 .unwrap_or_else(|| "libonnxruntime.so".into()),
         };
         match ort::init_from(&path) {
-            Ok(builder) => {
-                builder.commit();
-                tracing::info!(runtime = %path.display(), "loaded onnxruntime");
-                let _ = LOADED_RUNTIME.set(path.clone());
-                Ok(path)
-            }
+            Ok(builder) => match builder.build() {
+                Ok(env) => {
+                    tracing::info!(runtime = %path.display(), "loaded onnxruntime");
+                    let _ = LOADED_RUNTIME.set(path.clone());
+                    Ok((path, env))
+                }
+                Err(e) => Err(format!(
+                    "cannot create onnxruntime environment ({}): {e}",
+                    path.display()
+                )),
+            },
             Err(e) => Err(format!(
                 "cannot load onnxruntime ({}): {e}; set ORT_DYLIB_PATH or install libonnxruntime.so \
                  to ~/.local/lib/vinoopeneffects/ort",
                 path.display()
             )),
         }
-    });
-    loaded
-        .as_ref()
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    })
 }
 
 #[cfg(feature = "npu")]
@@ -412,7 +432,18 @@ fn compile_cache_dir() -> Option<String> {
 
 #[cfg(not(feature = "npu"))]
 pub(crate) fn ensure_runtime() -> anyhow::Result<()> {
-    Ok(())
+    environment().map(|_| ())
+}
+
+/// The process-wide ort environment; ort only keeps a weak handle, so this
+/// static keeps it alive.
+#[cfg(not(feature = "npu"))]
+fn environment() -> anyhow::Result<&'static ort::environment::Environment> {
+    use std::sync::OnceLock;
+    static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::new();
+    ENV.get_or_init(|| ort::init().build().map_err(|e| e.to_string()))
+        .as_ref()
+        .map_err(|e| anyhow::anyhow!("create onnxruntime environment: {e}"))
 }
 
 #[cfg(feature = "npu")]
@@ -449,7 +480,7 @@ fn with_execution_provider(
     if let Some(dir) = compile_cache_dir() {
         ep = ep.with_cache_dir(dir);
     }
-    if !ep.is_available().unwrap_or(false) {
+    if !OpenVINO::is_available().unwrap_or(false) {
         anyhow::ensure!(
             !strict,
             "OpenVINO execution provider unavailable (is ORT_DYLIB_PATH an onnxruntime-openvino build?)"
