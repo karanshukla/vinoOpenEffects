@@ -16,7 +16,7 @@ pub struct Widgets {
 pub fn build(cmd_tx: &CmdTx) -> Widgets {
     let card = {
         let cmd_tx = cmd_tx.clone();
-        EffectCard::new("Reactions", "face-smile-symbolic", move |on| {
+        EffectCard::new("Gesture Reactions", "face-smile-symbolic", move |on| {
             let _ = cmd_tx.send(GuiCommand::SetEnabled {
                 id: "reactions".into(),
                 on,
@@ -47,20 +47,12 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         emoji_flow.append(&button);
     }
 
-    let hint = gtk::Label::builder()
-        .label("Enable the switch above to trigger reactions with hand gestures")
-        .xalign(0.0)
-        .wrap(true)
-        .css_classes(["caption", "dim-label"])
-        .build();
-
     let body = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(8)
         .build();
-    body.append(&section_label("Click to Send"));
+    body.append(&section_label("Send Now"));
     body.append(&emoji_flow);
-    body.append(&hint);
     card.add_row(&plain_row(&body));
 
     let widgets = Widgets { card };
@@ -77,10 +69,36 @@ impl Widgets {
 
     fn apply_on(&self, on: bool) {
         self.card.set_on(on);
-        self.card.set_summary(if on {
-            "Gestures on · click to send"
-        } else {
-            "Gestures off · click to send"
+        self.card
+            .set_summary(if on { "Gestures on" } else { "Gestures off" });
+    }
+}
+
+#[cfg(test)]
+mod widget_tests {
+    use super::*;
+    use crate::gtk_test::{channel_pair, run};
+
+    #[test]
+    fn the_card_is_named_gesture_reactions_and_updates_its_summary() {
+        run(|| {
+            let (tx, _rx) = channel_pair();
+            let widgets = build(&tx);
+            let expander = widgets
+                .card
+                .list
+                .first_child()
+                .unwrap()
+                .downcast::<adw::ExpanderRow>()
+                .unwrap();
+            assert_eq!(expander.title(), "Gesture Reactions");
+            assert_eq!(expander.subtitle(), "Gestures off");
+            assert!(!widgets.card.is_on());
+
+            let on: VariantMap = [("enabled".to_string(), shared::dbus::bool_value(true))].into();
+            widgets.apply(&on);
+            assert!(widgets.card.is_on());
+            assert_eq!(expander.subtitle(), "Gestures on");
         });
     }
 }

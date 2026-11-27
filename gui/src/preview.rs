@@ -145,10 +145,7 @@ fn build_problem_notice() -> ProblemNotice {
         .build();
     let restart_btn = gtk::Button::builder()
         .label("Restart Camera Services")
-        .tooltip_text(
-            "Restarts WirePlumber and the vinoOpenEffects daemon. \
-             Other apps may briefly lose camera or audio routing.",
-        )
+        .tooltip_text("Restarts WirePlumber and the camera service. Other apps may briefly lose camera or audio.")
         .css_classes(["oe-pill-button"])
         .build();
     let actions = gtk::Box::builder()
@@ -237,7 +234,7 @@ fn build_compare_button() -> gtk::Button {
     content.append(&gtk::Label::new(Some("Hold to Compare")));
     gtk::Button::builder()
         .child(&content)
-        .tooltip_text("Hold to view the raw camera feed without effects")
+        .tooltip_text("View original camera feed")
         .halign(gtk::Align::Start)
         .valign(gtk::Align::End)
         .margin_start(14)
@@ -490,9 +487,7 @@ fn missing_plugin() -> Option<String> {
     .into_iter()
     .find(|(element, _, _)| gst::ElementFactory::find(element).is_none())
     .map(|(_, what, packages)| (what, packages))?;
-    Some(format!(
-        "The preview requires the GStreamer {what} plugin. Install {packages} and try again."
-    ))
+    Some(format!("Missing GStreamer {what} plugin ({packages})."))
 }
 
 #[cfg(test)]
@@ -618,7 +613,7 @@ mod widget_tests {
             assert!(button.has_css_class("oe-pill-button"));
             assert_eq!(
                 button.tooltip_text().as_deref(),
-                Some("Hold to view the raw camera feed without effects")
+                Some("View original camera feed")
             );
             let content = button.child().unwrap();
             let parts = children(&content);

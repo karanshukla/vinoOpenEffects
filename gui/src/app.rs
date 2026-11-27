@@ -172,7 +172,7 @@ fn build_bypass_toggle(cmd_tx: &CmdTx) -> (gtk::Box, gtk::Switch, glib::SignalHa
     let bypass_switch = gtk::Switch::builder()
         .valign(gtk::Align::Center)
         .active(true)
-        .tooltip_text("Toggle all effects. When off, the raw camera feed passes through unchanged.")
+        .tooltip_text("Turn all effects on or off")
         .build();
     bypass_switch.update_property(&[gtk::accessible::Property::Label("All effects")]);
     let bypass_handler = {
@@ -530,8 +530,8 @@ struct StatusBanner {
 fn status_banner(status: &str) -> Option<StatusBanner> {
     let (title, startable) = match status {
         "stopped" => ("Virtual camera stopped", true),
-        "error" => ("Virtual camera stopped due to an error", true),
-        "disconnected" => ("Cannot reach the effects daemon", false),
+        "error" => ("Virtual camera stopped unexpectedly", true),
+        "disconnected" => ("Can't reach the camera service", false),
         _ => return None,
     };
     Some(StatusBanner { title, startable })
@@ -567,7 +567,7 @@ fn apply_capabilities(w: &Widgets, caps: &VariantMap) {
     w.prefs.models_group.set_description(if ready {
         None
     } else {
-        Some("Re-run the installer to download models; vinoopeneffects-ctl doctor lists missing files")
+        Some("Some models are missing. Re-run the installer to download them.")
     });
     w.preview.node_pill.set_label(&vcam);
 
@@ -621,7 +621,7 @@ fn apply_inference(
     w.prefs.inference_toggle_npu.set_enabled(has_npu);
     w.studio_light.set_npu_available(has_npu);
     if !has_npu {
-        let tip = detail.unwrap_or("No Intel NPU or OpenVINO runtime available");
+        let tip = detail.unwrap_or("No Intel NPU available");
         w.prefs.inference_toggle_npu.set_tooltip(tip);
     } else {
         w.prefs.inference_toggle_npu.set_tooltip("");
@@ -867,5 +867,22 @@ mod widget_tests {
         let mut keys: Vec<_> = params.keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, ["enabled", "intensity"]);
+    }
+
+    #[test]
+    fn status_banner_maps_actionable_states() {
+        let stopped = status_banner("stopped").unwrap();
+        assert_eq!(stopped.title, "Virtual camera stopped");
+        assert!(stopped.startable);
+
+        let error = status_banner("error").unwrap();
+        assert_eq!(error.title, "Virtual camera stopped unexpectedly");
+        assert!(error.startable);
+
+        let disconnected = status_banner("disconnected").unwrap();
+        assert_eq!(disconnected.title, "Can't reach the camera service");
+        assert!(!disconnected.startable);
+
+        assert!(status_banner("running").is_none());
     }
 }

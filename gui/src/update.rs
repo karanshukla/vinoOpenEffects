@@ -149,7 +149,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>) {
 fn offer(parent: &gtk::Widget, tag: String) {
     let upgrade = upgrade_command();
     let body = if upgrade.is_some() {
-        format!("{tag} is available. Updating restarts the daemon and briefly pauses the camera.")
+        format!("{tag} is available. Updating briefly pauses the camera.")
     } else {
         format!("{tag} is available. See the GitHub release page for manual update instructions.")
     };
