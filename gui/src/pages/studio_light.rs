@@ -2,6 +2,7 @@
 //! which stays insensitive without an NPU.
 
 use std::cell::Cell;
+use std::rc::Rc;
 
 use adw::prelude::*;
 use shared::dbus::{VariantMap, bool_value, value_as_bool, value_as_i32, value_as_u32};
@@ -24,11 +25,10 @@ pub struct Widgets {
     auto_strength_row: gtk::ListBoxRow,
     /// Dimmed while Studio Light is off.
     rows: Vec<gtk::ListBoxRow>,
-    on: Cell<bool>,
-    npu: Cell<bool>,
+    on: Rc<Cell<bool>>,
+    npu: Rc<Cell<bool>>,
 }
 
-const AUTO_LIGHT_SUBTITLE: &str = "Low-light model that brightens dim scenes";
 const AUTO_LIGHT_NO_NPU: &str = "Requires an Intel NPU";
 
 fn build_card(cmd_tx: &CmdTx) -> EffectCard {
@@ -108,7 +108,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
     let behind_you = plain_row(&section_label("Background"));
     let (bg_row, bg_brightness) = slider_row_i32(
         "Brightness",
-        "Darken or brighten the background",
+        "",
         -100.0,
         100.0,
         1.0,
@@ -119,6 +119,17 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
 
     auto_strength.set_accessible_name("Auto light strength");
     bg_brightness.set_accessible_name("Background brightness");
+
+    let on = Rc::new(Cell::new(false));
+    let npu = Rc::new(Cell::new(false));
+    {
+        let on = Rc::clone(&on);
+        let npu = Rc::clone(&npu);
+        let auto_strength_row = auto_strength_row.clone();
+        auto_light.connect_active_notify(move |row| {
+            auto_strength_row.set_sensitive(on.get() && npu.get() && row.is_active());
+        });
+    }
 
     let rows = vec![
         on_you,
@@ -135,7 +146,7 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         card.add_row(row);
     }
 
-    Widgets {
+    let widgets = Widgets {
         card,
         intensity,
         brightness,
@@ -146,26 +157,20 @@ pub fn build(cmd_tx: &CmdTx) -> Widgets {
         auto_strength,
         auto_strength_row,
         rows,
-        on: Cell::new(false),
-        npu: Cell::new(false),
-    }
+        on,
+        npu,
+    };
+    widgets.update_sensitivity();
+    widgets
 }
 
 impl Widgets {
     /// Auto light runs only on an NPU, so without one its rows stay insensitive.
     pub fn set_npu_available(&self, npu: bool) {
         self.npu.set(npu);
-        self.auto_light.set_subtitle(if npu {
-            AUTO_LIGHT_SUBTITLE
-        } else {
-            AUTO_LIGHT_NO_NPU
-        });
+        self.auto_light
+            .set_subtitle(if npu { "" } else { AUTO_LIGHT_NO_NPU });
         self.update_sensitivity();
-    }
-
-    #[cfg(test)]
-    pub fn auto_light_sensitive(&self) -> bool {
-        self.auto_light.is_sensitive() && self.auto_strength_row.is_sensitive()
     }
 
     fn update_sensitivity(&self) {
@@ -175,19 +180,24 @@ impl Widgets {
         }
         let auto = on && self.npu.get();
         self.auto_light.set_sensitive(auto);
-        self.auto_strength_row.set_sensitive(auto);
+        self.auto_strength_row
+            .set_sensitive(auto && self.auto_light.is_active());
+    }
+
+    fn update_summary(&self) {
+        self.card.set_summary(if !self.on.get() {
+            "Off"
+        } else if self.auto_light.is_active() {
+            "On · Auto Light"
+        } else {
+            "On"
+        });
     }
 
     pub fn apply(&self, params: &VariantMap) {
         if let Some(on) = params.get("enabled").and_then(value_as_bool) {
             self.card.set_on(on);
-            self.card.set_summary(if on {
-                "Foreground and background lighting"
-            } else {
-                "Off"
-            });
             self.on.set(on);
-            self.update_sensitivity();
         }
         if let Some(v) = params.get("intensity").and_then(value_as_u32) {
             self.intensity.set_value(v as f64);
@@ -211,6 +221,8 @@ impl Widgets {
         if let Some(v) = params.get("auto_strength").and_then(value_as_u32) {
             self.auto_strength.set_value(v as f64);
         }
+        self.update_sensitivity();
+        self.update_summary();
     }
 }
 
@@ -233,17 +245,38 @@ mod widget_tests {
     }
 
     #[test]
-    fn auto_light_is_sensitive_only_with_an_npu() {
+    fn auto_light_is_sensitive_only_with_an_npu_and_strength_follows_its_switch() {
         run(|| {
             let (tx, _rx) = channel_pair();
             let widgets = build(&tx);
             let enabled: shared::dbus::VariantMap =
                 [("enabled".to_string(), shared::dbus::bool_value(true))].into();
             widgets.apply(&enabled);
-            for npu in [false, true] {
-                widgets.set_npu_available(npu);
-                assert_eq!(widgets.auto_light_sensitive(), npu, "npu {npu}");
-            }
+
+            widgets.set_npu_available(false);
+            assert!(!widgets.auto_light.is_sensitive());
+            assert!(!widgets.auto_strength_row.is_sensitive());
+            assert_eq!(
+                widgets.auto_light.subtitle().as_deref(),
+                Some(AUTO_LIGHT_NO_NPU)
+            );
+
+            widgets.set_npu_available(true);
+            assert!(widgets.auto_light.is_sensitive());
+            assert!(
+                widgets
+                    .auto_light
+                    .subtitle()
+                    .as_deref()
+                    .is_none_or(str::is_empty)
+            );
+            assert!(!widgets.auto_strength_row.is_sensitive());
+
+            widgets.auto_light.set_active(true);
+            assert!(widgets.auto_strength_row.is_sensitive());
+
+            widgets.auto_light.set_active(false);
+            assert!(!widgets.auto_strength_row.is_sensitive());
         });
     }
 
@@ -314,13 +347,36 @@ mod widget_tests {
         run(|| {
             let (tx, _rx) = channel_pair();
             let widgets = build(&tx);
+            let expander = widgets
+                .card
+                .list
+                .first_child()
+                .unwrap()
+                .downcast::<adw::ExpanderRow>()
+                .unwrap();
             let on: shared::dbus::VariantMap =
                 [("enabled".to_string(), shared::dbus::bool_value(true))].into();
             widgets.apply(&on);
+            assert_eq!(expander.subtitle(), "On");
             assert!(widgets.rows[1].is_sensitive());
-            assert!(!widgets.auto_light_sensitive());
+            assert!(!widgets.auto_light.is_sensitive());
+            assert!(!widgets.auto_strength_row.is_sensitive());
+
             widgets.set_npu_available(true);
-            assert!(widgets.auto_light_sensitive());
+            assert!(widgets.auto_light.is_sensitive());
+            assert!(!widgets.auto_strength_row.is_sensitive());
+
+            let auto_on: shared::dbus::VariantMap =
+                [("auto_light".to_string(), shared::dbus::bool_value(true))].into();
+            widgets.apply(&auto_on);
+            assert_eq!(expander.subtitle(), "On · Auto Light");
+            assert!(widgets.auto_strength_row.is_sensitive());
+
+            let off: shared::dbus::VariantMap =
+                [("enabled".to_string(), shared::dbus::bool_value(false))].into();
+            widgets.apply(&off);
+            assert_eq!(expander.subtitle(), "Off");
+            assert!(!widgets.auto_strength_row.is_sensitive());
             pump(10);
         });
     }

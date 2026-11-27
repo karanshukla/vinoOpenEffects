@@ -377,10 +377,11 @@ impl EffectCard {
 }
 
 pub fn pref_group(title: &str, description: &str) -> adw::PreferencesGroup {
-    adw::PreferencesGroup::builder()
-        .title(title)
-        .description(description)
-        .build()
+    let group = adw::PreferencesGroup::builder().title(title).build();
+    if !description.is_empty() {
+        group.set_description(Some(description));
+    }
+    group
 }
 
 #[cfg(test)]

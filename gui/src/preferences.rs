@@ -96,10 +96,7 @@ struct CameraGroup {
 }
 
 fn add_camera_group(page: &adw::PreferencesPage, cmd_tx: &CmdTx) -> CameraGroup {
-    let camera_group = pref_group(
-        "Camera",
-        "Choose the physical camera vinoOpenEffects captures from",
-    );
+    let camera_group = pref_group("Camera", "");
     let combo = adw::ComboRow::builder()
         .title("Source")
         .model(&gtk::StringList::new(&["No cameras found"]))
@@ -148,10 +145,7 @@ struct ProcessorGroup {
 }
 
 fn add_processor_group(page: &adw::PreferencesPage, cmd_tx: &CmdTx) -> ProcessorGroup {
-    let group_box = pref_group(
-        "Processor",
-        "Choose where effect models run. Auto uses the NPU when available.",
-    );
+    let group_box = pref_group("Processor", "Auto uses the NPU when available.");
 
     let row = adw::ActionRow::builder()
         .title("Run Models On")
@@ -222,28 +216,45 @@ fn add_models_group(page: &adw::PreferencesPage) -> ModelsGroup {
     ModelsGroup { group, rows }
 }
 
+const KEEP_RUNNING_SUBTITLE: &str = "Keep camera effects active after closing this window";
+const KEEP_RUNNING_FORCED: &str = "Always on while Start at Login is enabled";
+const UNSUPPORTED_SESSION_SUBTITLE: &str =
+    "Unsupported in this desktop session. Start it from your compositor config instead.";
+
+fn sync_keep_running_row(row: &adw::SwitchRow, start_at_login: bool) {
+    row.set_sensitive(!start_at_login);
+    row.set_subtitle(if start_at_login {
+        KEEP_RUNNING_FORCED
+    } else {
+        KEEP_RUNNING_SUBTITLE
+    });
+}
+
+fn apply_session_support(boot_row: &adw::SwitchRow, supported: bool) {
+    if !supported {
+        boot_row.set_sensitive(false);
+        boot_row.set_subtitle(UNSUPPORTED_SESSION_SUBTITLE);
+    }
+}
+
 fn add_startup_group(page: &adw::PreferencesPage, gui_config: &Rc<RefCell<GuiConfig>>) {
-    let startup = pref_group("Startup", "Control when the vinoOpenEffects daemon runs");
+    let startup = pref_group("Startup", "");
 
     let keep_running_row = adw::SwitchRow::builder()
         .title("Run in Background")
-        .subtitle("Keep the daemon running after this window closes")
         .active(gui_config.borrow().keep_running_in_background)
         .build();
 
     let boot_row = adw::SwitchRow::builder()
         .title("Start at Login")
-        .subtitle("Start the daemon when you log in")
         .active(shared::systemd::is_enabled())
         .build();
-    keep_running_row.set_sensitive(!boot_row.is_active());
+    sync_keep_running_row(&keep_running_row, boot_row.is_active());
     // sway/Hyprland without systemd integration never start the target the unit hangs off.
-    if shared::systemd::session_target_active() == Some(false) {
-        boot_row.set_subtitle(
-            "Your session does not start graphical-session.target, so this setting will not take effect. \
-             Start the daemon from your compositor configuration instead.",
-        );
-    }
+    apply_session_support(
+        &boot_row,
+        shared::systemd::session_target_active() != Some(false),
+    );
 
     let keep_running_for_boot = keep_running_row.clone();
     boot_row.connect_active_notify(move |row| {
@@ -251,7 +262,7 @@ fn add_startup_group(page: &adw::PreferencesPage, gui_config: &Rc<RefCell<GuiCon
         if let Err(err) = shared::systemd::set_enabled(on) {
             tracing::warn!(%err, "failed to change daemon autostart");
         }
-        keep_running_for_boot.set_sensitive(!on);
+        sync_keep_running_row(&keep_running_for_boot, on);
     });
     startup.add(&boot_row);
 
@@ -315,16 +326,25 @@ fn delete_models_row() -> adw::ActionRow {
     row
 }
 
+fn empty_models_subtitle(has_system_models: bool) -> &'static str {
+    if has_system_models {
+        "No user models downloaded. System models aren't affected."
+    } else {
+        "No downloaded models"
+    }
+}
+
 fn refresh_delete_row(row: &adw::ActionRow, button: &gtk::Button) {
-    let paths = UserPaths::current();
-    let (subtitle, can_delete) = match &paths {
+    let (subtitle, can_delete) = match UserPaths::current() {
         Some(paths) if paths.has_models() => {
             (on_disk(paths.size(), &models::tilde(&paths.models)), true)
         }
-        _ => (
-            "No user models downloaded. System-wide models are not affected.".to_string(),
-            false,
-        ),
+        paths => {
+            let has_system = paths
+                .as_ref()
+                .is_some_and(|p| !models::system_dirs_with_models(p).is_empty());
+            (empty_models_subtitle(has_system).to_string(), false)
+        }
     };
     row.set_subtitle(&subtitle);
     button.set_sensitive(can_delete);
@@ -336,28 +356,21 @@ fn on_disk(bytes: u64, dir: &str) -> String {
 
 /// What Delete does, in the confirm dialog.
 fn confirm_body(system: &[PathBuf], upgrade: bool) -> String {
-    let fetch = if upgrade {
-        "run vinoopeneffects-upgrade"
-    } else {
-        "run scripts/fetch-models.sh from your checkout"
-    };
     let effect = if system.is_empty() {
-        format!(
-            "Portrait blur, background replace, Center Stage, and gesture reactions will stop \
-             working until you download the models again ({fetch})."
-        )
+        let fetch = if upgrade {
+            "run vinoopeneffects-upgrade"
+        } else {
+            "run scripts/fetch-models.sh from your checkout"
+        };
+        format!("AI effects will stop working until you download the models again ({fetch}).")
     } else {
         let dirs: Vec<String> = system.iter().map(|d| d.display().to_string()).collect();
         format!(
-            "System-wide models in {} will remain installed and will be used for effects. \
-             To download a per-user copy again, {fetch}.",
+            "System models in {} will still be used.",
             dirs.join(" and ")
         )
     };
-    format!(
-        "{effect} The effects daemon will restart, briefly pausing the camera. \
-         Your backgrounds and settings will be kept."
-    )
+    format!("{effect} The camera will briefly pause; your backgrounds and settings are kept.")
 }
 
 fn run_delete(button: &gtk::Button, paths: UserPaths, refresh: impl Fn() + 'static) {
@@ -396,7 +409,8 @@ mod delete_tests {
         let release = confirm_body(&[], true);
         assert!(release.contains("vinoopeneffects-upgrade"));
         assert!(release.contains("stop working"));
-        assert!(release.contains("backgrounds and settings will be kept"));
+        assert!(release.contains("backgrounds and settings are kept"));
+        assert!(!release.contains("daemon"));
         let checkout = confirm_body(&[], false);
         assert!(checkout.contains("scripts/fetch-models.sh"));
     }
@@ -407,8 +421,15 @@ mod delete_tests {
             &[PathBuf::from("/usr/local/share/vinoopeneffects/models")],
             true,
         );
-        assert!(body.contains("/usr/local/share/vinoopeneffects/models will remain installed"));
+        assert!(body.contains("/usr/local/share/vinoopeneffects/models will still be used"));
         assert!(!body.contains("stop working"));
+        assert!(!body.contains("daemon"));
+    }
+
+    #[test]
+    fn empty_subtitle_mentions_system_models_only_when_present() {
+        assert_eq!(empty_models_subtitle(false), "No downloaded models");
+        assert!(empty_models_subtitle(true).contains("System models"));
     }
 
     #[test]
@@ -570,6 +591,37 @@ mod widget_tests {
                 ["Camera", "Processor", "Models", "Startup"]
             );
             assert_eq!(widgets.model_rows.len(), BUNDLED_MODELS.len());
+        });
+    }
+
+    #[test]
+    fn start_at_login_disables_run_in_background_and_explains_why() {
+        run(|| {
+            let row = adw::SwitchRow::builder().title("Run in Background").build();
+            sync_keep_running_row(&row, false);
+            assert!(row.is_sensitive());
+            assert_eq!(row.subtitle().as_deref(), Some(KEEP_RUNNING_SUBTITLE));
+
+            sync_keep_running_row(&row, true);
+            assert!(!row.is_sensitive());
+            assert_eq!(row.subtitle().as_deref(), Some(KEEP_RUNNING_FORCED));
+        });
+    }
+
+    #[test]
+    fn unsupported_sessions_disable_start_at_login() {
+        run(|| {
+            let row = adw::SwitchRow::builder().title("Start at Login").build();
+            apply_session_support(&row, true);
+            assert!(row.is_sensitive());
+            assert!(row.subtitle().as_deref().is_none_or(str::is_empty));
+
+            apply_session_support(&row, false);
+            assert!(!row.is_sensitive());
+            assert_eq!(
+                row.subtitle().as_deref(),
+                Some(UNSUPPORTED_SESSION_SUBTITLE)
+            );
         });
     }
 }
